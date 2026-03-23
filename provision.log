@@ -1,0 +1,23 @@
+
+[1m> wsl.conf[0m
+[0;32m[OK][0m wsl.conf (hostname=wsl-devbox, systemd=true)
+
+[1m> Timezone: America/Sao_Paulo[0m
+[0;32m[OK][0m Timezone
+
+[1m> Base packages[0m
+[0;32m[OK][0m Base packages
+
+[1m> User: operador[0m
+[1;33m[WARN][0m Already exists
+[0;32m[OK][0m Sudo NOPASSWD
+
+[1m> Oh My Zsh[0m
+The $ZSH folder already exists (/home/operador/.oh-my-zsh).
+You'll need to remove it if you want to reinstall.
+Cloning into '/home/operador/.oh-my-zsh/custom/themes/powerlevel10k'...
+[0;32m[OK][0m Oh My Zsh
+
+[1m> kubectl[0m
+
+gpg: signal Interrupt caught ... exiting
