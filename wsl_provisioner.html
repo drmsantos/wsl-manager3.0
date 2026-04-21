@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSL Provisioner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #07090f;
+  --s1:       #0c1120;
+  --s2:       #111827;
+  --s3:       #1a2436;
+  --border:   #1e2d45;
+  --border2:  #2a3f5e;
+  --accent:   #3d8eff;
+  --accent2:  #00d4aa;
+  --warn:     #f59e0b;
+  --danger:   #ef4444;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --mono:     'JetBrains Mono', monospace;
+  --sans:     'Syne', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* grid bg */
+body::before {
+  content:'';
+  position:fixed;inset:0;
+  background-image:
+    linear-gradient(rgba(61,142,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(61,142,255,.025) 1px,transparent 1px);
+  background-size:48px 48px;
+  pointer-events:none;z-index:0;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  position:sticky;top:0;z-index:100;
+  background:rgba(12,17,32,.92);
+  backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 28px;height:58px;gap:14px;
+}
+.logo {
+  width:34px;height:34px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;flex-shrink:0;
+}
+.topbar-title { font-size:17px;font-weight:800;letter-spacing:-.02em; }
+.topbar-sub   { font-family:var(--mono);font-size:11px;color:var(--muted); }
+.topbar-right { margin-left:auto;display:flex;align-items:center;gap:10px; }
+.step-pip {
+  width:28px;height:28px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:700;
+  border:1.5px solid var(--border);color:var(--muted);
+  transition:all .2s;
+}
+.step-pip.done   { background:var(--accent2);border-color:var(--accent2);color:#04342c; }
+.step-pip.active { background:var(--accent);border-color:var(--accent);color:#fff; }
+.step-line { width:22px;height:1px;background:var(--border); }
+
+/* ── MAIN ── */
+.main { position:relative;z-index:1;flex:1;padding:28px 28px 60px; }
+
+/* ── STEP PANELS ── */
+.step-panel { display:none; animation:fadeUp .25s ease; }
+.step-panel.active { display:block; }
+@keyframes fadeUp {
+  from{opacity:0;transform:translateY(8px)}
+  to  {opacity:1;transform:translateY(0)}
+}
+
+.panel-title { font-size:22px;font-weight:800;margin-bottom:6px; }
+.panel-sub   { font-size:13px;color:var(--muted);margin-bottom:28px;line-height:1.6; }
+
+/* ── STEP 1: User form ── */
+.user-form {
+  background:var(--s1);border:1px solid var(--border);
+  border-radius:14px;padding:28px;max-width:520px;
+}
+.field { margin-bottom:18px; }
+.field label { display:block;font-size:12px;color:var(--muted);margin-bottom:7px;letter-spacing:.05em; }
+.field input, .field select {
+  width:100%;background:var(--s2);border:1px solid var(--border);
+  border-radius:9px;padding:11px 14px;
+  color:var(--text);font-family:var(--mono);font-size:13px;
+  outline:none;transition:border-color .15s;
+}
+.field input:focus, .field select:focus { border-color:var(--accent); }
+.field input::placeholder { color:var(--muted); }
+
+.field-row { display:grid;grid-template-columns:1fr 1fr;gap:14px; }
+.shell-opts { display:flex;gap:10px; }
+.shell-opt {
+  flex:1;background:var(--s2);border:1.5px solid var(--border);
+  border-radius:9px;padding:10px;cursor:pointer;transition:all .15s;
+  text-align:center;font-family:var(--mono);font-size:13px;
+}
+.shell-opt:hover { border-color:var(--accent2); color:var(--accent2); }
+.shell-opt.sel   { border-color:var(--accent2);background:rgba(0,212,170,.08);color:var(--accent2); }
+.shell-opt span  { display:block;font-size:10px;color:var(--muted);margin-top:3px; }
+
+.sudo-row {
+  display:flex;align-items:center;gap:10px;
+  background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);
+  border-radius:9px;padding:12px 14px;margin-top:6px;
+}
+.sudo-row label { font-size:13px;color:var(--warn);cursor:pointer;flex:1; }
+.sudo-row small  { font-size:11px;color:var(--muted);display:block; }
+.toggle {
+  width:36px;height:20px;background:var(--border);border-radius:10px;
+  position:relative;cursor:pointer;flex-shrink:0;transition:background .2s;
+}
+.toggle.on { background:var(--warn); }
+.toggle::after {
+  content:'';position:absolute;top:2px;left:2px;
+  width:16px;height:16px;border-radius:50%;background:#fff;
+  transition:transform .2s;
+}
+.toggle.on::after { transform:translateX(16px); }
+
+/* ── STEP 2: Tool selection ── */
+.categories { display:flex;flex-direction:column;gap:24px; }
+
+.cat-block { background:var(--s1);border:1px solid var(--border);border-radius:14px;overflow:hidden; }
+.cat-header {
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+  cursor:pointer;user-select:none;
+}
+.cat-header:hover { background:rgba(255,255,255,.02); }
+.cat-icon { font-size:18px;width:28px;text-align:center; }
+.cat-name { font-size:14px;font-weight:700; }
+.cat-desc { font-size:12px;color:var(--muted);margin-top:1px; }
+.cat-toggle-all {
+  margin-left:auto;
+  font-family:var(--mono);font-size:10px;
+  background:var(--s3);border:1px solid var(--border);
+  border-radius:6px;padding:4px 10px;cursor:pointer;color:var(--muted);
+  transition:all .15s;white-space:nowrap;
+}
+.cat-toggle-all:hover { color:var(--accent);border-color:var(--accent); }
+
+.tools-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:1px;background:var(--border);
+}
+
+.tool-card {
+  background:var(--s1);padding:14px 16px;cursor:pointer;
+  transition:background .12s;position:relative;
+  display:flex;align-items:flex-start;gap:11px;
+}
+.tool-card:hover { background:var(--s2); }
+.tool-card.sel   { background:rgba(61,142,255,.07); }
+.tool-card.sel::before {
+  content:'';position:absolute;top:0;left:0;bottom:0;width:2px;
+  background:var(--accent);
+}
+
+.tool-check {
+  width:18px;height:18px;border-radius:5px;
+  border:1.5px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;margin-top:2px;transition:all .12s;
+  font-size:10px;
+}
+.tool-card.sel .tool-check {
+  background:var(--accent);border-color:var(--accent);color:#fff;
+}
+
+.tool-name  { font-size:13px;font-weight:700;line-height:1.2; }
+.tool-ver   { font-family:var(--mono);font-size:9px;color:var(--accent2);margin-top:2px; }
+.tool-desc  { font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4; }
+.tool-tag   {
+  display:inline-block;margin-top:5px;
+  font-family:var(--mono);font-size:9px;font-weight:600;
+  padding:1px 6px;border-radius:4px;
+}
+.tag-k8s   { background:rgba(61,142,255,.15);color:var(--accent); }
+.tag-cloud { background:rgba(0,212,170,.12);color:var(--accent2); }
+.tag-db    { background:rgba(245,158,11,.12);color:var(--warn); }
+.tag-dev   { background:rgba(167,100,255,.15);color:#b07aff; }
+.tag-shell { background:rgba(239,68,68,.12);color:#f87171; }
+.tag-net   { background:rgba(100,200,100,.12);color:#6cd86c; }
+
+/* ── STEP 3: Review + generate ── */
+.review-grid { display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px; }
+@media(max-width:700px){ .review-grid { grid-template-columns:1fr; } }
+
+.review-card {
+  background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:18px;
+}
+.review-card h3 { font-size:13px;color:var(--muted);letter-spacing:.05em;margin-bottom:12px; }
+.review-item {
+  display:flex;gap:8px;align-items:baseline;
+  font-family:var(--mono);font-size:12px;margin-bottom:6px;
+}
+.review-item .ri-key   { color:var(--muted);min-width:80px; }
+.review-item .ri-val   { color:var(--accent2); }
+
+.tools-summary {
+  display:flex;flex-wrap:wrap;gap:6px;
+}
+.ts-tag {
+  display:flex;align-items:center;gap:5px;
+  background:var(--s2);border:1px solid var(--border);
+  border-radius:6px;padding:4px 10px;
+  font-family:var(--mono);font-size:11px;color:var(--text);
+}
+.ts-tag .dot { width:6px;height:6px;border-radius:50%;background:var(--accent2); }
+
+/* ── SCRIPT OUTPUT ── */
+.script-wrap {
+  background:var(--s1);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+}
+.script-bar {
+  display:flex;align-items:center;gap:8px;padding:10px 16px;
+  background:var(--s2);border-bottom:1px solid var(--border);
+}
+.script-bar .dot { width:10px;height:10px;border-radius:50%; }
+.script-filename { font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:4px;flex:1; }
+.copy-btn {
+  background:transparent;border:1px solid var(--border);border-radius:6px;
+  color:var(--muted);font-family:var(--mono);font-size:11px;
+  padding:4px 12px;cursor:pointer;transition:all .15s;
+}
+.copy-btn:hover { color:var(--accent);border-color:var(--accent); }
+.copy-btn.ok    { color:var(--accent2);border-color:var(--accent2); }
+
+.script-body {
+  padding:18px 20px;font-family:var(--mono);font-size:11.5px;
+  line-height:1.7;color:#a8c7fa;
+  max-height:420px;overflow-y:auto;white-space:pre;
+}
+.sc { color:#6cd86c; }  /* comment */
+.sk { color:#f59e0b; }  /* keyword */
+.sv { color:#c792ea; }  /* variable */
+.sf { color:#82aaff; }  /* function/cmd */
+.ss { color:#c3e88d; }  /* string */
+
+/* ── DOWNLOAD BAR ── */
+.dl-bar {
+  display:flex;gap:12px;align-items:center;
+  margin-top:16px;flex-wrap:wrap;
+}
+
+/* ── FOOTER NAV ── */
+.footer-nav {
+  position:fixed;bottom:0;left:0;right:0;z-index:90;
+  background:rgba(12,17,32,.96);backdrop-filter:blur(16px);
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 28px;gap:12px;
+}
+.sel-count {
+  font-family:var(--mono);font-size:12px;color:var(--muted);
+  display:flex;align-items:center;gap:6px;
+}
+.sel-count b { color:var(--accent2); }
+
+/* ── BUTTONS ── */
+.btn {
+  display:inline-flex;align-items:center;gap:7px;
+  padding:10px 22px;border-radius:9px;border:none;cursor:pointer;
+  font-family:var(--mono);font-size:12px;font-weight:600;transition:all .15s;
+}
+.btn-primary { background:var(--accent);color:#fff; }
+.btn-primary:hover { background:#5a9fff;transform:translateY(-1px); }
+.btn-ghost { background:transparent;color:var(--text);border:1px solid var(--border); }
+.btn-ghost:hover { border-color:var(--accent);color:var(--accent); }
+.btn-success { background:var(--accent2);color:#04342c;font-weight:700; }
+.btn-success:hover { background:#00eabf; }
+.btn-sm { padding:7px 14px;font-size:11px; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border);border-radius:3px; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="logo">🐧</div>
+  <div>
+    <div class="topbar-title">WSL Provisioner</div>
+    <div class="topbar-sub">Cria usuário + instala ferramentas automaticamente</div>
+  </div>
+  <div class="topbar-right">
+    <div class="step-pip" id="pip1">1</div>
+    <div class="step-line"></div>
+    <div class="step-pip" id="pip2">2</div>
+    <div class="step-line"></div>
+    <div class="step-pip" id="pip3">3</div>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- ── STEP 1: Usuário ── -->
+<div class="step-panel active" id="step1">
+  <div class="panel-title">Novo usuário WSL</div>
+  <div class="panel-sub">Preencha as informações do usuário. O script será gerado com tudo configurado.</div>
+  <div class="user-form">
+    <div class="field">
+      <label>NOME DO USUÁRIO</label>
+      <input id="f-user" type="text" placeholder="oracle" maxlength="32" oninput="validateStep1()">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>SHELL PADRÃO</label>
+        <div class="shell-opts">
+          <div class="shell-opt sel" onclick="selShell('zsh',this)">zsh<span>recomendado</span></div>
+          <div class="shell-opt" onclick="selShell('bash',this)">bash<span>padrão</span></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>TEMA OH-MY-ZSH</label>
+        <select id="f-theme">
+          <option value="agnoster">agnoster</option>
+          <option value="robbyrussell">robbyrussell</option>
+          <option value="powerlevel10k">powerlevel10k</option>
+          <option value="af-magic">af-magic</option>
+          <option value="none">nenhum</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>FUSO HORÁRIO</label>
+      <input id="f-tz" type="text" value="America/Sao_Paulo">
+    </div>
+    <div class="field">
+      <label>GIT — NOME COMPLETO</label>
+      <input id="f-gitname" type="text" placeholder="Diego Santos">
+    </div>
+    <div class="field">
+      <label>GIT — EMAIL</label>
+      <input id="f-gitemail" type="text" placeholder="diego@openlabs.com.br">
+    </div>
+    <div class="sudo-row">
+      <div>
+        <label for="f-sudo">Adicionar ao grupo sudo</label>
+        <small>Permite usar sudo dentro do WSL</small>
+      </div>
+      <div class="toggle on" id="sudo-toggle" onclick="toggleSudo()"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 2: Ferramentas ── -->
+<div class="step-panel" id="step2">
+  <div class="panel-title">Selecione as ferramentas</div>
+  <div class="panel-sub">Escolha tudo que precisa. O script instala, configura e adiciona aliases automaticamente.</div>
+  <div class="categories" id="tool-categories"></div>
+</div>
+
+<!-- ── STEP 3: Script ── -->
+<div class="step-panel" id="step3">
+  <div class="panel-title">Script gerado</div>
+  <div class="panel-sub">Copie ou baixe o script. Rode como root no WSL: <code style="color:var(--accent2);font-family:var(--mono)">sudo bash provision_USUARIO.sh</code></div>
+
+  <div class="review-grid">
+    <div class="review-card">
+      <h3>USUÁRIO</h3>
+      <div class="review-item"><span class="ri-key">login</span><span class="ri-val" id="rv-user">—</span></div>
+      <div class="review-item"><span class="ri-key">shell</span><span class="ri-val" id="rv-shell">—</span></div>
+      <div class="review-item"><span class="ri-key">sudo</span><span class="ri-val" id="rv-sudo">—</span></div>
+      <div class="review-item"><span class="ri-key">tema</span><span class="ri-val" id="rv-theme">—</span></div>
+      <div class="review-item"><span class="ri-key">git</span><span class="ri-val" id="rv-git">—</span></div>
+    </div>
+    <div class="review-card">
+      <h3>FERRAMENTAS SELECIONADAS (<span id="rv-count">0</span>)</h3>
+      <div class="tools-summary" id="rv-tools"></div>
+    </div>
+  </div>
+
+  <div class="script-wrap">
+    <div class="script-bar">
+      <div class="dot" style="background:#ff5f57"></div>
+      <div class="dot" style="background:#febc2e"></div>
+      <div class="dot" style="background:#28c840"></div>
+      <span class="script-filename" id="script-filename">provision_user.sh</span>
+      <button class="copy-btn" id="copy-btn" onclick="copyScript()">copiar</button>
+    </div>
+    <div class="script-body" id="script-output"></div>
+  </div>
+
+  <div class="dl-bar">
+    <button class="btn btn-success" onclick="downloadScript()">⬇ Baixar .sh</button>
+    <button class="btn btn-ghost btn-sm" onclick="goStep(2)">← Editar ferramentas</button>
+    <button class="btn btn-ghost btn-sm" onclick="goStep(1)">← Editar usuário</button>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<!-- FOOTER NAV -->
+<div class="footer-nav">
+  <div class="sel-count" id="footer-info">Preencha o nome do usuário para continuar</div>
+  <div style="display:flex;gap:10px;">
+    <button class="btn btn-ghost" id="btn-back" onclick="goBack()" style="display:none">← Voltar</button>
+    <button class="btn btn-primary" id="btn-next" onclick="goNext()" disabled>Próximo →</button>
+  </div>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────────
+
+const TOOLS = [
+  {
+    cat: "Kubernetes & OpenShift", icon: "☸", desc: "Orquestração de containers",
+    tools: [
+      { id:"kubectl",     name:"kubectl",       ver:"latest",   desc:"CLI oficial do Kubernetes",                  tag:"k8s",   def:true  },
+      { id:"oc",          name:"oc (OpenShift)", ver:"4.x",      desc:"CLI do OpenShift + kubectl estendido",       tag:"k8s",   def:true  },
+      { id:"helm",        name:"Helm",           ver:"v3",       desc:"Gerenciador de pacotes K8s",                 tag:"k8s",   def:true  },
+      { id:"k9s",         name:"k9s",            ver:"latest",   desc:"Terminal UI para Kubernetes",                tag:"k8s",   def:false },
+      { id:"kustomize",   name:"Kustomize",      ver:"latest",   desc:"Customização de manifests K8s",             tag:"k8s",   def:false },
+      { id:"kubectx",     name:"kubectx+kubens", ver:"latest",   desc:"Troca rápida de context e namespace",       tag:"k8s",   def:false },
+      { id:"stern",       name:"Stern",           ver:"latest",   desc:"Multi-pod log tailing",                     tag:"k8s",   def:false },
+      { id:"velero",      name:"Velero CLI",      ver:"latest",   desc:"Backup e restore de clusters K8s",          tag:"k8s",   def:false },
+    ]
+  },
+  {
+    cat: "Cloud & IaC", icon: "☁", desc: "Infraestrutura como código",
+    tools: [
+      { id:"terraform",   name:"Terraform",      ver:"latest",   desc:"IaC multi-cloud HashiCorp",                 tag:"cloud", def:true  },
+      { id:"ansible",     name:"Ansible",         ver:"latest",   desc:"Automação de configuração",                 tag:"cloud", def:false },
+      { id:"awscli",      name:"AWS CLI v2",      ver:"v2",       desc:"CLI oficial da Amazon Web Services",        tag:"cloud", def:false },
+      { id:"gcloud",      name:"gcloud CLI",      ver:"latest",   desc:"CLI do Google Cloud Platform",              tag:"cloud", def:false },
+      { id:"azcli",       name:"Azure CLI",       ver:"latest",   desc:"CLI do Microsoft Azure",                    tag:"cloud", def:false },
+      { id:"pulumi",      name:"Pulumi",           ver:"latest",   desc:"IaC com linguagens reais",                  tag:"cloud", def:false },
+    ]
+  },
+  {
+    cat: "Observabilidade", icon: "📊", desc: "Monitoring, logs e métricas",
+    tools: [
+      { id:"promtool",    name:"promtool",        ver:"latest",   desc:"CLI do Prometheus / validação de rules",    tag:"net",   def:false },
+      { id:"grafana_cli", name:"Grafana CLI",     ver:"latest",   desc:"Gerencia plugins e datasources",            tag:"net",   def:false },
+      { id:"opensearch",  name:"opensearch-cli",  ver:"latest",   desc:"CLI para OpenSearch / Elasticsearch",       tag:"db",    def:false },
+      { id:"logcli",      name:"logcli (Loki)",   ver:"latest",   desc:"Query logs do Loki via terminal",           tag:"net",   def:false },
+      { id:"vector",      name:"Vector",           ver:"0.39",     desc:"Pipeline de observabilidade (já em uso)",   tag:"net",   def:true  },
+    ]
+  },
+  {
+    cat: "Containers & CI/CD", icon: "🐳", desc: "Build, registry e pipelines",
+    tools: [
+      { id:"docker",      name:"Docker CLI",      ver:"latest",   desc:"Build e run de containers",                 tag:"dev",   def:true  },
+      { id:"podman",      name:"Podman",           ver:"latest",   desc:"Docker-compatible, daemonless",             tag:"dev",   def:false },
+      { id:"skopeo",      name:"Skopeo",           ver:"latest",   desc:"Inspeciona e copia imagens sem pull",       tag:"dev",   def:false },
+      { id:"buildah",     name:"Buildah",          ver:"latest",   desc:"Build de imagens OCI sem Docker",           tag:"dev",   def:false },
+      { id:"argocd",      name:"ArgoCD CLI",       ver:"latest",   desc:"GitOps CD para Kubernetes",                 tag:"k8s",   def:false },
+      { id:"tekton",      name:"tkn (Tekton)",     ver:"latest",   desc:"CLI do Tekton Pipelines",                   tag:"k8s",   def:false },
+    ]
+  },
+  {
+    cat: "Banco de Dados", icon: "🗄", desc: "Clientes e ferramentas de BD",
+    tools: [
+      { id:"sqlplus",     name:"SQLPlus",          ver:"21c",      desc:"Oracle SQL*Plus (cliente Oracle)",           tag:"db",    def:true  },
+      { id:"mysql",       name:"MySQL Client",     ver:"8.0",      desc:"CLI do MySQL / MariaDB",                    tag:"db",    def:false },
+      { id:"psql",        name:"psql (PostgreSQL)",ver:"15",       desc:"CLI do PostgreSQL",                         tag:"db",    def:false },
+      { id:"mongosh",     name:"mongosh",           ver:"latest",   desc:"Shell moderno do MongoDB",                  tag:"db",    def:false },
+      { id:"redis_cli",   name:"redis-cli",         ver:"latest",   desc:"Cliente Redis",                             tag:"db",    def:false },
+    ]
+  },
+  {
+    cat: "Dev & Linguagens", icon: "⌨", desc: "Runtimes, SDKs e editores",
+    tools: [
+      { id:"vscode",      name:"VS Code Server",  ver:"latest",   desc:"code . abre VS Code no Windows via WSL",    tag:"dev",   def:true  },
+      { id:"python3",     name:"Python 3 + pip",  ver:"3.11",     desc:"Runtime Python com pip e venv",             tag:"dev",   def:true  },
+      { id:"nodejs",      name:"Node.js + npm",   ver:"20 LTS",   desc:"Runtime JavaScript via nvm",                tag:"dev",   def:false },
+      { id:"go",          name:"Go",               ver:"1.22",     desc:"Linguagem Go (usada por k8s tools)",         tag:"dev",   def:false },
+      { id:"jdk",         name:"Java 21 JDK",     ver:"21 LTS",   desc:"OpenJDK (Maven incluso)",                   tag:"dev",   def:false },
+      { id:"rust",        name:"Rust + cargo",    ver:"stable",   desc:"Linguagem Rust via rustup",                  tag:"dev",   def:false },
+    ]
+  },
+  {
+    cat: "Shell & Produtividade", icon: "🚀", desc: "Aliases, plugins e QoL",
+    tools: [
+      { id:"ohmyzsh",     name:"Oh My Zsh",        ver:"latest",   desc:"Framework zsh com plugins e temas",         tag:"shell", def:true  },
+      { id:"zsh_plugins", name:"Plugins zsh",      ver:"-",        desc:"zsh-autosuggestions + syntax-highlight",    tag:"shell", def:true  },
+      { id:"tmux",        name:"tmux",              ver:"latest",   desc:"Multiplexador de terminal",                 tag:"shell", def:false },
+      { id:"fzf",         name:"fzf",               ver:"latest",   desc:"Fuzzy finder para histórico e arquivos",    tag:"shell", def:true  },
+      { id:"bat",         name:"bat",               ver:"latest",   desc:"cat com syntax highlight",                  tag:"shell", def:false },
+      { id:"eza",         name:"eza",               ver:"latest",   desc:"ls moderno com ícones e git status",        tag:"shell", def:false },
+      { id:"htop",        name:"htop + btop",       ver:"latest",   desc:"Monitores de recursos interativos",         tag:"shell", def:false },
+      { id:"jq",          name:"jq + yq",           ver:"latest",   desc:"Parse de JSON e YAML no terminal",          tag:"shell", def:true  },
+      { id:"ripgrep",     name:"ripgrep + fd",      ver:"latest",   desc:"grep e find ultrarrápidos",                 tag:"shell", def:false },
+    ]
+  },
+  {
+    cat: "Rede & Segurança", icon: "🔐", desc: "Diagnóstico e acesso remoto",
+    tools: [
+      { id:"nmap",        name:"nmap",              ver:"latest",   desc:"Scanner de portas e rede",                  tag:"net",   def:false },
+      { id:"curl_jq",     name:"curl + httpie",    ver:"latest",   desc:"HTTP requests e API testing",               tag:"net",   def:true  },
+      { id:"openssl",     name:"OpenSSL + cfssl",  ver:"latest",   desc:"Geração de certs TLS e PKI",                tag:"net",   def:false },
+      { id:"wireguard",   name:"WireGuard tools",  ver:"latest",   desc:"VPN moderno de alto desempenho",            tag:"net",   def:false },
+      { id:"sshpass",     name:"sshpass + sshuttle",ver:"latest",  desc:"SSH automatizado e túnel proxy",            tag:"net",   def:false },
+    ]
+  },
+];
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let currentStep = 1;
+let selectedShell = 'zsh';
+let sudoEnabled = true;
+let selected = new Set();
+
+// Pre-select defaults
+TOOLS.forEach(c => c.tools.forEach(t => { if(t.def) selected.add(t.id); }));
+
+// ── RENDER TOOLS ──────────────────────────────────────────────────────────────
+function renderTools() {
+  const container = document.getElementById('tool-categories');
+  container.innerHTML = TOOLS.map((cat, ci) => `
+    <div class="cat-block">
+      <div class="cat-header" onclick="toggleCat(${ci})">
+        <span class="cat-icon">${cat.icon}</span>
+        <div>
+          <div class="cat-name">${cat.cat}</div>
+          <div class="cat-desc">${cat.desc}</div>
+        </div>
+        <button class="cat-toggle-all" onclick="event.stopPropagation();toggleAllCat(${ci})">
+          ${cat.tools.every(t => selected.has(t.id)) ? 'desmarcar todos' : 'marcar todos'}
+        </button>
+      </div>
+      <div class="tools-grid" id="cat-grid-${ci}">
+        ${cat.tools.map(t => `
+          <div class="tool-card ${selected.has(t.id)?'sel':''}" id="tc-${t.id}" onclick="toggleTool('${t.id}',${ci})">
+            <div class="tool-check">${selected.has(t.id)?'✓':''}</div>
+            <div>
+              <div class="tool-name">${t.name}</div>
+              <div class="tool-ver">${t.ver}</div>
+              <div class="tool-desc">${t.desc}</div>
+              <span class="tool-tag tag-${t.tag}">${t.tag}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+  updateFooter();
+}
+
+function toggleTool(id, ci) {
+  if(selected.has(id)) selected.delete(id); else selected.add(id);
+  const card = document.getElementById('tc-'+id);
+  card.classList.toggle('sel', selected.has(id));
+  card.querySelector('.tool-check').textContent = selected.has(id)?'✓':'';
+  // update cat button
+  const cat = TOOLS[ci];
+  const btn = document.querySelector(`#cat-grid-${ci}`).previousElementSibling.querySelector('.cat-toggle-all');
+  btn.textContent = cat.tools.every(t => selected.has(t.id)) ? 'desmarcar todos' : 'marcar todos';
+  updateFooter();
+}
+
+function toggleAllCat(ci) {
+  const cat = TOOLS[ci];
+  const allSel = cat.tools.every(t => selected.has(t.id));
+  cat.tools.forEach(t => { if(allSel) selected.delete(t.id); else selected.add(t.id); });
+  renderTools();
+}
+
+function toggleCat(ci) { /* expandable later */ }
+
+function updateFooter() {
+  const n = selected.size;
+  document.getElementById('footer-info').innerHTML =
+    currentStep === 1 ? 'Preencha o nome do usuário para continuar' :
+    currentStep === 2 ? `<b>${n}</b> ferramenta${n!==1?'s':''} selecionada${n!==1?'s':''}` :
+    'Script pronto para uso';
+}
+
+// ── STEP NAV ─────────────────────────────────────────────────────────────────
+function goStep(n) {
+  document.getElementById('step'+currentStep).classList.remove('active');
+  currentStep = n;
+  document.getElementById('step'+currentStep).classList.add('active');
+  ['pip1','pip2','pip3'].forEach((id,i) => {
+    const el = document.getElementById(id);
+    el.className = 'step-pip' + (i+1 < n ? ' done' : i+1 === n ? ' active' : '');
+    el.textContent = i+1 < n ? '✓' : i+1;
+  });
+  document.getElementById('btn-back').style.display = n > 1 ? '' : 'none';
+  if(n === 3) { generateScript(); document.getElementById('btn-next').style.display='none'; }
+  else { document.getElementById('btn-next').style.display=''; }
+  updateFooter();
+  window.scrollTo(0,0);
+}
+
+function goNext() {
+  if(currentStep===1 && !validateStep1()) return;
+  if(currentStep===2) { goStep(3); return; }
+  goStep(currentStep+1);
+}
+
+function goBack() { goStep(currentStep-1); }
+
+function validateStep1() {
+  const u = document.getElementById('f-user').value.trim();
+  const ok = /^[a-z][a-z0-9_-]{0,31}$/.test(u);
+  document.getElementById('btn-next').disabled = !ok;
+  return ok;
+}
+
+function selShell(sh, el) {
+  selectedShell = sh;
+  document.querySelectorAll('.shell-opt').forEach(e => e.classList.remove('sel'));
+  el.classList.add('sel');
+  const themeField = document.getElementById('f-theme').closest('.field');
+  themeField.style.opacity = sh==='zsh' ? '1' : '0.3';
+}
+
+function toggleSudo() {
+  sudoEnabled = !sudoEnabled;
+  document.getElementById('sudo-toggle').classList.toggle('on', sudoEnabled);
+}
+
+// ── SCRIPT GENERATION ────────────────────────────────────────────────────────
+function generateScript() {
+  const user   = document.getElementById('f-user').value.trim() || 'user';
+  const tz     = document.getElementById('f-tz').value.trim() || 'America/Sao_Paulo';
+  const gname  = document.getElementById('f-gitname').value.trim();
+  const gemail = document.getElementById('f-gitemail').value.trim();
+  const theme  = document.getElementById('f-theme').value;
+  const sel    = [...selected];
+
+  // Review panel
+  document.getElementById('rv-user').textContent  = user;
+  document.getElementById('rv-shell').textContent = selectedShell;
+  document.getElementById('rv-sudo').textContent  = sudoEnabled ? 'sim' : 'não';
+  document.getElementById('rv-theme').textContent = selectedShell==='zsh' ? theme : '—';
+  document.getElementById('rv-git').textContent   = gname ? `${gname} <${gemail}>` : '(não configurado)';
+  document.getElementById('rv-count').textContent = sel.length;
+  document.getElementById('script-filename').textContent = `provision_${user}.sh`;
+
+  const toolNames = [];
+  TOOLS.forEach(c => c.tools.forEach(t => { if(selected.has(t.id)) toolNames.push(t.name); }));
+  document.getElementById('rv-tools').innerHTML = toolNames.map(n =>
+    `<div class="ts-tag"><span class="dot"></span>${n}</div>`).join('');
+
+  // Build script
+  const lines = [];
+  const L = (...a) => lines.push(...a);
+
+  L(`#!/usr/bin/env bash`);
+  L(`# ============================================================`);
+  L(`#  WSL Provisioner — provision_${user}.sh`);
+  L(`#  Gerado por: WSL Profile Sync Dashboard`);
+  L(`#  Data: ${new Date().toLocaleString('pt-BR')}`);
+  L(`#  Usuário: ${user} | Shell: ${selectedShell} | TZ: ${tz}`);
+  L(`# ============================================================`);
+  L(`set -euo pipefail`);
+  L(``);
+  L(`RED='\\033[0;31m'; GREEN='\\033[0;32m'; YELLOW='\\033[1;33m'`);
+  L(`CYAN='\\033[0;36m'; BOLD='\\033[1m'; NC='\\033[0m'`);
+  L(`log_ok()   { echo -e "${GREEN}[OK]${NC}    $*"; }`);
+  L(`log_info() { echo -e "${CYAN}[INFO]${NC}  $*"; }`);
+  L(`log_warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }`);
+  L(`log_step() { echo -e "\\n${BOLD}▸ $*${NC}"; }`);
+  L(``);
+  L(`USERNAME="${user}"`);
+  L(`SHELL_BIN="${selectedShell==='zsh'?'/usr/bin/zsh':'/bin/bash'}"`);
+  L(`TZ_VAL="${tz}"`);
+  L(``);
+  L(`# Verifica se está rodando como root`);
+  L(`[[ $EUID -ne 0 ]] && { echo -e "${RED}Execute como root: sudo bash $0${NC}"; exit 1; }`);
+  L(``);
+
+  // ─ Create user
+  L(`log_step "Criando usuário: $USERNAME"`);
+  L(`if id "$USERNAME" &>/dev/null; then`);
+  L(`  log_warn "Usuário $USERNAME já existe, pulando criação"`);
+  L(`else`);
+  L(`  useradd -m -s "$SHELL_BIN" -c "${user} (WSL Provisioner)" "$USERNAME"`);
+  L(`  echo "$USERNAME:$(openssl rand -base64 16)" | chpasswd`);
+  L(`  log_ok "Usuário $USERNAME criado"`);
+  L(`fi`);
+  L(``);
+  if(sudoEnabled) {
+    L(`log_step "Adicionando $USERNAME ao grupo sudo"`);
+    L(`usermod -aG sudo "$USERNAME"`);
+    L(`echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME`);
+    L(`chmod 440 /etc/sudoers.d/$USERNAME`);
+    L(`log_ok "Sudo configurado (NOPASSWD)"`);
+    L(``);
+  }
+
+  // ─ Timezone
+  L(`log_step "Configurando timezone: $TZ_VAL"`);
+  L(`timedatectl set-timezone "$TZ_VAL" 2>/dev/null || ln -sf /usr/share/zoneinfo/$TZ_VAL /etc/localtime`);
+  L(`log_ok "Timezone: $TZ_VAL"`);
+  L(``);
+
+  // ─ Base packages
+  L(`log_step "Atualizando apt e pacotes base"`);
+  L(`apt-get update -qq`);
+  L(`apt-get install -y -qq \\`);
+  L(`  curl wget git unzip zip tar ca-certificates gnupg lsb-release \\`);
+  L(`  apt-transport-https software-properties-common build-essential \\`);
+  L(`  sudo vim nano less man-db`);
+  L(`log_ok "Pacotes base instalados"`);
+  L(``);
+
+  // ─ Shell
+  if(selectedShell === 'zsh' || selected.has('ohmyzsh')) {
+    L(`log_step "Instalando zsh"`);
+    L(`apt-get install -y -qq zsh`);
+    L(`chsh -s /usr/bin/zsh "$USERNAME"`);
+    L(`log_ok "zsh instalado e definido como shell de $USERNAME"`);
+    L(``);
+  }
+
+  // ─ TOOLS: iteramos pelas categorias na ordem
+  const RUN_AS_USER = (cmds) => {
+    lines.push(`su - "$USERNAME" -c '${cmds}'`);
+  };
+
+  if(selected.has('ohmyzsh')) {
+    L(`log_step "Instalando Oh My Zsh para $USERNAME"`);
+    L(`su - "$USERNAME" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'`);
+    if(theme !== 'none' && theme !== 'powerlevel10k') {
+      L(`su - "$USERNAME" -c 'sed -i "s/ZSH_THEME=\\"robbyrussell\\"/ZSH_THEME=\\"${theme}\\"/" ~/.zshrc'`);
+    }
+    if(theme === 'powerlevel10k') {
+      L(`su - "$USERNAME" -c 'git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k'`);
+      L(`su - "$USERNAME" -c 'sed -i "s/ZSH_THEME=\\"robbyrussell\\"/ZSH_THEME=\\"powerlevel10k\\/powerlevel10k\\"/" ~/.zshrc'`);
+    }
+    L(`log_ok "Oh My Zsh instalado (tema: ${theme})"`);
+    L(``);
+  }
+
+  if(selected.has('zsh_plugins')) {
+    L(`log_step "Instalando plugins zsh"`);
+    L(`su - "$USERNAME" -c 'git clone https://github.com/zsh-users/zsh-autosuggestions \${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions'`);
+    L(`su - "$USERNAME" -c 'git clone https://github.com/zsh-users/zsh-syntax-highlighting \${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting'`);
+    L(`su - "$USERNAME" -c 'sed -i "s/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting kubectl docker)/" ~/.zshrc'`);
+    L(`log_ok "Plugins: autosuggestions + syntax-highlighting"`);
+    L(``);
+  }
+
+  if(selected.has('kubectl')) {
+    L(`log_step "Instalando kubectl"`);
+    L(`curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg`);
+    L(`echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' > /etc/apt/sources.list.d/kubernetes.list`);
+    L(`apt-get update -qq && apt-get install -y -qq kubectl`);
+    L(`log_ok "kubectl $(kubectl version --client --short 2>/dev/null | head-1)"`);
+    L(``);
+  }
+
+  if(selected.has('oc')) {
+    L(`log_step "Instalando oc (OpenShift CLI)"`);
+    L(`OC_VER=$(curl -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/release.txt | grep 'Version:' | awk '{print $2}')`);
+    L(`curl -fsSL "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/$OC_VER/openshift-client-linux.tar.gz" | tar -xz -C /usr/local/bin oc kubectl`);
+    L(`log_ok "oc $OC_VER instalado"`);
+    L(``);
+  }
+
+  if(selected.has('helm')) {
+    L(`log_step "Instalando Helm v3"`);
+    L(`curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash`);
+    L(`log_ok "$(helm version --short)"`);
+    L(``);
+  }
+
+  if(selected.has('k9s')) {
+    L(`log_step "Instalando k9s"`);
+    L(`K9S_VER=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep tag_name | cut -d'"' -f4)`);
+    L(`curl -fsSL "https://github.com/derailed/k9s/releases/download/$K9S_VER/k9s_Linux_amd64.tar.gz" | tar -xz -C /usr/local/bin k9s`);
+    L(`log_ok "k9s $K9S_VER instalado"`);
+    L(``);
+  }
+
+  if(selected.has('kustomize')) {
+    L(`log_step "Instalando Kustomize"`);
+    L(`curl -fsSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash`);
+    L(`mv kustomize /usr/local/bin/`);
+    L(`log_ok "$(kustomize version)"`);
+    L(``);
+  }
+
+  if(selected.has('kubectx')) {
+    L(`log_step "Instalando kubectx + kubens"`);
+    L(`KCTX_VER=$(curl -s https://api.github.com/repos/ahmetb/kubectx/releases/latest | grep tag_name | cut -d'"' -f4)`);
+    L(`curl -fsSL "https://github.com/ahmetb/kubectx/releases/download/$KCTX_VER/kubectx_${KCTX_VER}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin kubectx`);
+    L(`curl -fsSL "https://github.com/ahmetb/kubectx/releases/download/$KCTX_VER/kubens_${KCTX_VER}_linux_x86_64.tar.gz"  | tar -xz -C /usr/local/bin kubens`);
+    L(`log_ok "kubectx + kubens $KCTX_VER instalados"`);
+    L(``);
+  }
+
+  if(selected.has('stern')) {
+    L(`log_step "Instalando Stern"`);
+    L(`STERN_VER=$(curl -s https://api.github.com/repos/stern/stern/releases/latest | grep tag_name | cut -d'"' -f4)`);
+    L(`curl -fsSL "https://github.com/stern/stern/releases/download/$STERN_VER/stern_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin stern`);
+    L(`log_ok "stern $STERN_VER instalado"`);
+    L(``);
+  }
+
+  if(selected.has('argocd')) {
+    L(`log_step "Instalando ArgoCD CLI"`);
+    L(`ARGO_VER=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest | grep tag_name | cut -d'"' -f4)`);
+    L(`curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/$ARGO_VER/argocd-linux-amd64" -o /usr/local/bin/argocd`);
+    L(`chmod +x /usr/local/bin/argocd`);
+    L(`log_ok "argocd $ARGO_VER instalado"`);
+    L(``);
+  }
+
+  if(selected.has('terraform')) {
+    L(`log_step "Instalando Terraform"`);
+    L(`wget -qO- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg`);
+    L(`echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list`);
+    L(`apt-get update -qq && apt-get install -y -qq terraform`);
+    L(`log_ok "$(terraform version | head -1)"`);
+    L(``);
+  }
+
+  if(selected.has('ansible')) {
+    L(`log_step "Instalando Ansible"`);
+    L(`apt-get install -y -qq ansible`);
+    L(`log_ok "$(ansible --version | head -1)"`);
+    L(``);
+  }
+
+  if(selected.has('awscli')) {
+    L(`log_step "Instalando AWS CLI v2"`);
+    L(`curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip`);
+    L(`unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip`);
+    L(`log_ok "$(aws --version)"`);
+    L(``);
+  }
+
+  if(selected.has('docker')) {
+    L(`log_step "Instalando Docker CLI"`);
+    L(`curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg`);
+    L(`echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list`);
+    L(`apt-get update -qq && apt-get install -y -qq docker-ce-cli docker-compose-plugin`);
+    L(`usermod -aG docker "$USERNAME"`);
+    L(`log_ok "Docker CLI instalado"`);
+    L(``);
+  }
+
+  if(selected.has('sqlplus')) {
+    L(`log_step "Instalando Oracle Instant Client + SQLPlus 21c"`);
+    L(`apt-get install -y -qq libaio1`);
+    L(`# Baixa Oracle Instant Client 21c`);
+    L(`IC_BASE="https://download.oracle.com/otn_software/linux/instantclient/2112000"`);
+    L(`curl -fsSL "$IC_BASE/instantclient-basic-linux.x64-21.12.0.0.0dbru.zip"   -o /tmp/ic-basic.zip`);
+    L(`curl -fsSL "$IC_BASE/instantclient-sqlplus-linux.x64-21.12.0.0.0dbru.zip" -o /tmp/ic-sqlplus.zip`);
+    L(`mkdir -p /usr/lib/oracle/21/client64/{bin,lib}`);
+    L(`unzip -q /tmp/ic-basic.zip   -d /tmp/ic && mv /tmp/ic/instantclient_21_12/*.so* /usr/lib/oracle/21/client64/lib/`);
+    L(`unzip -q /tmp/ic-sqlplus.zip -d /tmp/ic && mv /tmp/ic/instantclient_21_12/sqlplus /usr/lib/oracle/21/client64/bin/`);
+    L(`rm -rf /tmp/ic /tmp/ic-*.zip`);
+    L(`echo /usr/lib/oracle/21/client64/lib > /etc/ld.so.conf.d/oracle21.conf && ldconfig`);
+    L(`ln -sf /usr/lib/oracle/21/client64/bin/sqlplus /usr/local/bin/sqlplus`);
+    L(`# Variáveis de ambiente Oracle`);
+    L(`cat >> /home/$USERNAME/.zshrc << 'ORACLE_ENV'`);
+    L(`export ORACLE_HOME=/usr/lib/oracle/21/client64`);
+    L(`export LD_LIBRARY_PATH=$ORACLE_HOME/lib:$LD_LIBRARY_PATH`);
+    L(`export PATH=$ORACLE_HOME/bin:$PATH`);
+    L(`export NLS_LANG=AMERICAN_AMERICA.AL32UTF8`);
+    L(`export ORACLE_TERM=xterm`);
+    L(`ORACLE_ENV`);
+    L(`log_ok "SQLPlus 21c instalado em /usr/lib/oracle/21/client64"`)
+    L(``);
+  }
+
+  if(selected.has('vscode')) {
+    L(`log_step "Configurando VS Code (WSL extension)"`);
+    L(`# Instala code-server CLI (para 'code .' funcionar no WSL)`);
+    L(`su - "$USERNAME" -c 'curl -fsSL https://code-server.dev/install.sh | sh -s -- --dry-run' || true`);
+    L(`# Garante que 'code' está disponível via integração WSL→Windows`);
+    L(`cat >> /home/$USERNAME/.zshrc << 'VSCODE_ENV'`);
+    L(`# VS Code — abre no Windows via WSL`);
+    L(`alias code='/mnt/c/Users/\$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d "\\r")/AppData/Local/Programs/Microsoft\\ VS\\ Code/bin/code'`);
+    L(`VSCODE_ENV`);
+    L(`log_ok "Alias 'code' configurado para VS Code no Windows"`);
+    L(``);
+  }
+
+  if(selected.has('python3')) {
+    L(`log_step "Instalando Python 3.11 + pip + venv"`);
+    L(`apt-get install -y -qq python3.11 python3.11-venv python3-pip python3-dev`);
+    L(`update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1`);
+    L(`su - "$USERNAME" -c 'pip3 install --user pipx && pipx ensurepath'`);
+    L(`log_ok "$(python3 --version)"`)
+    L(``);
+  }
+
+  if(selected.has('nodejs')) {
+    L(`log_step "Instalando Node.js 20 LTS via nvm"`);
+    L(`su - "$USERNAME" -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'`);
+    L(`su - "$USERNAME" -c 'source ~/.nvm/nvm.sh && nvm install 20 && nvm use 20 && nvm alias default 20'`);
+    L(`log_ok "Node.js 20 LTS instalado via nvm"`);
+    L(``);
+  }
+
+  if(selected.has('go')) {
+    L(`log_step "Instalando Go 1.22"`);
+    L(`GO_VER="1.22.3"`);
+    L(`curl -fsSL "https://go.dev/dl/go$GO_VER.linux-amd64.tar.gz" | tar -xz -C /usr/local`);
+    L(`cat >> /home/$USERNAME/.zshrc << 'GO_ENV'`);
+    L(`export GOPATH=$HOME/go`);
+    L(`export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin`);
+    L(`GO_ENV`);
+    L(`log_ok "Go $GO_VER instalado"`);
+    L(``);
+  }
+
+  if(selected.has('fzf')) {
+    L(`log_step "Instalando fzf"`);
+    L(`su - "$USERNAME" -c 'git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf && ~/.fzf/install --all'`);
+    L(`log_ok "fzf instalado"`);
+    L(``);
+  }
+
+  if(selected.has('jq')) {
+    L(`log_step "Instalando jq + yq"`);
+    L(`apt-get install -y -qq jq`);
+    L(`YQ_VER=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | grep tag_name | cut -d'"' -f4)`);
+    L(`curl -fsSL "https://github.com/mikefarah/yq/releases/download/$YQ_VER/yq_linux_amd64" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq`);
+    L(`log_ok "jq $(jq --version) + yq $YQ_VER instalados"`);
+    L(``);
+  }
+
+  if(selected.has('bat')) {
+    L(`log_step "Instalando bat"`);
+    L(`apt-get install -y -qq bat`);
+    L(`su - "$USERNAME" -c 'echo "alias cat=batcat" >> ~/.zshrc'`);
+    L(`log_ok "bat instalado (alias: cat)"`);
+    L(``);
+  }
+
+  if(selected.has('eza')) {
+    L(`log_step "Instalando eza (ls moderno)"`);
+    L(`wget -qO /usr/local/bin/eza https://github.com/eza-community/eza/releases/latest/download/eza_x86_64-unknown-linux-gnu.tar.gz && chmod +x /usr/local/bin/eza || apt-get install -y -qq eza`);
+    L(`su - "$USERNAME" -c 'echo "alias ls=eza\\nalias ll=\\"eza -la\\"\\nalias lt=\\"eza --tree\\"" >> ~/.zshrc'`);
+    L(`log_ok "eza instalado (aliases: ls, ll, lt)"`);
+    L(``);
+  }
+
+  if(selected.has('htop')) {
+    L(`log_step "Instalando htop + btop"`);
+    L(`apt-get install -y -qq htop btop`);
+    L(`log_ok "htop + btop instalados"`);
+    L(``);
+  }
+
+  if(selected.has('curl_jq')) {
+    L(`log_step "Instalando httpie"`);
+    L(`apt-get install -y -qq httpie`);
+    L(`log_ok "curl (já presente) + httpie instalados"`);
+    L(``);
+  }
+
+  if(selected.has('tmux')) {
+    L(`log_step "Instalando tmux"`);
+    L(`apt-get install -y -qq tmux`);
+    L(`cat > /home/$USERNAME/.tmux.conf << 'TMUX'`);
+    L(`set -g mouse on`);
+    L(`set -g default-terminal "screen-256color"`);
+    L(`set -g history-limit 50000`);
+    L(`bind r source-file ~/.tmux.conf`);
+    L(`TMUX`);
+    L(`chown $USERNAME: /home/$USERNAME/.tmux.conf`);
+    L(`log_ok "tmux instalado com config básica"`);
+    L(``);
+  }
+
+  if(selected.has('vector')) {
+    L(`log_step "Instalando Vector 0.39"`);
+    L(`curl -fsSL https://apt.vector.dev/gpg.key | gpg --dearmor -o /usr/share/keyrings/vector.gpg`);
+    L(`echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/vector.gpg] https://apt.vector.dev stable vector-0" > /etc/apt/sources.list.d/vector.list`);
+    L(`apt-get update -qq && apt-get install -y -qq vector`);
+    L(`log_ok "$(vector --version)"`);
+    L(``);
+  }
+
+  if(selected.has('ripgrep')) {
+    L(`log_step "Instalando ripgrep + fd"`);
+    L(`apt-get install -y -qq ripgrep fd-find`);
+    L(`su - "$USERNAME" -c 'echo "alias fd=fdfind" >> ~/.zshrc'`);
+    L(`log_ok "rg + fd instalados"`);
+    L(``);
+  }
+
+  if(selected.has('mysql')) {
+    L(`log_step "Instalando MySQL Client 8.0"`);
+    L(`apt-get install -y -qq mysql-client`);
+    L(`log_ok "mysql client $(mysql --version)"`)
+    L(``);
+  }
+
+  if(selected.has('psql')) {
+    L(`log_step "Instalando PostgreSQL Client 15"`);
+    L(`apt-get install -y -qq postgresql-client`);
+    L(`log_ok "$(psql --version)"`)
+    L(``);
+  }
+
+  if(selected.has('mongosh')) {
+    L(`log_step "Instalando mongosh"`);
+    L(`curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb.gpg`);
+    L(`echo "deb [arch=amd64 signed-by=/usr/share/keyrings/mongodb.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb.list`);
+    L(`apt-get update -qq && apt-get install -y -qq mongodb-mongosh`);
+    L(`log_ok "$(mongosh --version)"`)
+    L(``);
+  }
+
+  // ─ Git config
+  if(gname || gemail) {
+    L(`log_step "Configurando Git"`);
+    if(gname)  L(`su - "$USERNAME" -c 'git config --global user.name "${gname}"'`);
+    if(gemail) L(`su - "$USERNAME" -c 'git config --global user.email "${gemail}"'`);
+    L(`su - "$USERNAME" -c 'git config --global init.defaultBranch main'`);
+    L(`su - "$USERNAME" -c 'git config --global pull.rebase false'`);
+    L(`su - "$USERNAME" -c 'git config --global core.autocrlf false'`);
+    L(`log_ok "Git configurado"`);
+    L(``);
+  }
+
+  // ─ Aliases DevOps globais
+  L(`log_step "Configurando aliases DevOps"`);
+  L(`cat >> /home/$USERNAME/.zshrc << 'ALIASES'`);
+  L(`# ── DevOps Aliases ──`);
+  if(selected.has('kubectl')||selected.has('oc')) {
+    L(`alias k='kubectl'`);
+    L(`alias kgp='kubectl get pods'`);
+    L(`alias kgs='kubectl get svc'`);
+    L(`alias kgn='kubectl get nodes'`);
+    L(`alias kaf='kubectl apply -f'`);
+    L(`alias kdp='kubectl describe pod'`);
+    L(`alias kl='kubectl logs -f'`);
+    L(`alias kex='kubectl exec -it'`);
+    L(`alias kns='kubectl config set-context --current --namespace'`);
+  }
+  if(selected.has('oc')) {
+    L(`alias oc-login='oc login https://api.openshift.openlabs.local:6443'`);
+  }
+  if(selected.has('helm')) {
+    L(`alias h='helm'`);
+    L(`alias hls='helm list --all-namespaces'`);
+  }
+  if(selected.has('docker')) {
+    L(`alias d='docker'`);
+    L(`alias dps='docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"'`);
+    L(`alias dlogs='docker logs -f'`);
+    L(`alias dexec='docker exec -it'`);
+  }
+  if(selected.has('terraform')) {
+    L(`alias tf='terraform'`);
+    L(`alias tfi='terraform init'`);
+    L(`alias tfp='terraform plan'`);
+    L(`alias tfa='terraform apply'`);
+  }
+  if(selected.has('sqlplus')) {
+    L(`# SQLPlus — ajuste as credenciais`);
+    L(`alias sqldev='sqlplus usuario/senha@10.101.37.140:1549/nossdev1'`);
+  }
+  L(`# ── Utilitários ──`);
+  L(`alias ll='ls -lahF'`);
+  L(`alias ..='cd ..'`);
+  L(`alias ...='cd ../..'`);
+  L(`alias grep='grep --color=auto'`);
+  L(`alias ports='ss -tulnp'`);
+  L(`alias myip='curl -s ifconfig.me'`);
+  L(`alias wsl-restart='wsl.exe --shutdown'`);
+  L(`ALIASES`);
+  L(`chown "$USERNAME": /home/"$USERNAME"/.zshrc 2>/dev/null || true`);
+  L(`log_ok "Aliases configurados"`);
+  L(``);
+
+  // ─ Final
+  L(`# ── Instalação do wsl_profile.sh (sync de perfis) ──`);
+  L(`if [[ -f "/usr/local/bin/wsl_profile.sh" ]]; then`);
+  L(`  log_ok "wsl_profile.sh já presente — perfil pode ser exportado"`);
+  L(`fi`);
+  L(``);
+  L(`log_step "Provisionamento concluído!"`);
+  L(`echo -e ""`);
+  L(`echo -e "  ${GREEN}Usuário:${NC} $USERNAME"`);
+  L(`echo -e "  ${GREEN}Shell:${NC}   $SHELL_BIN"`);
+  L(`echo -e "  ${GREEN}Sudo:${NC}    ${sudoEnabled?'sim (NOPASSWD)':'não'}"`);
+  L(`echo -e ""`);
+  L(`echo -e "  Para acessar: ${CYAN}wsl -u $USERNAME${NC}"`);
+  L(`echo -e "  Para exportar perfil depois: ${CYAN}WSL_USER=$USERNAME wsl_profile.sh export${NC}"`);
+
+  // Render
+  const raw = lines.join('\n');
+  window.generatedScript = raw;
+  window.scriptFilename = `provision_${user}.sh`;
+
+  // HTML highlight básico
+  const hl = raw
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/(^#.+)/gm, '<span class="sc">$1</span>')
+    .replace(/\b(log_step|log_ok|log_info|log_warn|apt-get|curl|tar|git|chown|chmod|useradd|usermod|su|echo|cat|sed|mkdir|ln|rm|cp|mv|unzip|wget|gpg|timedatectl|chsh|ldconfig|update-alternatives)\b/g,'<span class="sf">$1</span>')
+    .replace(/\b(if|then|else|fi|do|done|while|for|in|case|esac|function|return|exit|set|export|readonly)\b/g,'<span class="sk">$1</span>')
+    .replace(/(\$\{?[A-Z_a-z][A-Z_a-z0-9]*\}?)/g,'<span class="sv">$1</span>')
+    .replace(/('[^']*')/g,'<span class="ss">$1</span>');
+
+  document.getElementById('script-output').innerHTML = hl;
+}
+
+function copyScript() {
+  navigator.clipboard.writeText(window.generatedScript||'').then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent='✓ copiado'; btn.classList.add('ok');
+    setTimeout(()=>{btn.textContent='copiar';btn.classList.remove('ok');},2000);
+  });
+}
+
+function downloadScript() {
+  const blob = new Blob([window.generatedScript||''], {type:'text/x-sh'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = window.scriptFilename || 'provision.sh';
+  a.click();
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+renderTools();
+goStep(1);
+document.getElementById('pip1').className = 'step-pip active';
+
+document.getElementById('f-user').addEventListener('input', validateStep1);
+
+// Step 2 footer update
+document.getElementById('step2').addEventListener('click', updateFooter);
+</script>
+</body>
+</html>

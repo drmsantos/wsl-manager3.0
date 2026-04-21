@@ -1,144 +1,185 @@
-# WSL Manager v3
+<div align="center">
 
-![version](https://img.shields.io/badge/version-3.0.0-blue?style=for-the-badge)
-![platform](https://img.shields.io/badge/platform-Kubernetes-326CE5?style=for-the-badge&logo=kubernetes)
-![backend](https://img.shields.io/badge/backend-FastAPI-009688?style=for-the-badge&logo=fastapi)
-![agent](https://img.shields.io/badge/agent-PowerShell-5391FE?style=for-the-badge&logo=powershell)
+<img src="https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge" />
+<img src="https://img.shields.io/badge/platform-Windows-0078D4?style=for-the-badge&logo=windows" />
+<img src="https://img.shields.io/badge/WSL-2-orange?style=for-the-badge&logo=linux" />
+<img src="https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=for-the-badge&logo=powershell" />
 
-**Gestão centralizada de ambientes WSL via Kubernetes — sem nada rodando na porta local.**
+# 🖥️ WSL Manager
 
----
+**Provisionamento, gestão e sincronização de perfis WSL entre múltiplos PCs Windows**
 
-## Arquitectura
+[Funcionalidades](#-funcionalidades) • [Instalação](#-instalação) • [Como usar](#-como-usar) • [Ferramentas](#-ferramentas-suportadas) • [Autor](#-autor)
 
-```
-Rancher RKE2 (rkeopl)
-└── namespace: wsl-manager
-    ├── wsl-manager-backend   (FastAPI + SQLite)
-    ├── wsl-manager-frontend  (nginx + HTML)
-    └── Ingress: wsl-manager.drmsantos.local
-
-Windows PCs (cada máquina)
-└── wsl-agent.ps1  →  polling a cada 3s para buscar comandos
-                   →  heartbeat a cada 5s com métricas + distros
-```
+</div>
 
 ---
 
-## Deploy no Rancher
+## ✨ Funcionalidades
 
-### 1. Editar o Secret
-
-```yaml
-# k8s/manifests.yaml — alterar antes de aplicar
-stringData:
-  JWT_SECRET:     "chave-aleatória-forte-32-chars-min"
-  ADMIN_PASSWORD: "SuaSenhaSegura2026!"
-```
-
-### 2. Aplicar manifests
-
-```bash
-kubectl apply -f k8s/manifests.yaml
-```
-
-### 3. Verificar
-
-```bash
-kubectl get pods -n wsl-manager
-kubectl logs -n wsl-manager deploy/wsl-manager-backend
-```
-
-### 4. Aceder
-
-```
-http://wsl-manager.drmsantos.local
-```
+| Módulo | Descrição |
+|--------|-----------|
+| 🚀 **Provisionamento** | Instala e configura distros WSL com utilizadores, shell e ferramentas DevOps |
+| 📤 **Exportar perfil** | Exporta dotfiles de um ou todos os utilizadores da distro |
+| 📥 **Importar perfil** | Restaura dotfiles noutro PC, criando utilizadores automaticamente |
+| 🖥️ **Gestão de PCs** | Regista e monitoriza múltiplos PCs e distros WSL |
+| 🔄 **Sync automático** | Sincroniza perfis entre máquinas com um clique |
 
 ---
 
-## Configurar o Agente Windows
+## 📦 Instalação
 
-### 1. Registrar o PC no dashboard
+### Requisitos
+- Windows 10/11 com WSL2 activado
+- PowerShell 5.1+
+- Browser moderno (Chrome, Edge, Firefox)
 
-1. Acede a `http://wsl-manager.drmsantos.local`
-2. Faz login com `ADMIN_PASSWORD`
-3. Vai a **Tokens / PCs** → **Registrar PC**
-4. Copia o **token JWT** gerado
-
-### 2. Configurar o agente
-
-Edita `agent/wsl-agent.ps1` e define as variáveis no topo:
+### Setup
 
 ```powershell
-$BackendURL = "http://wsl-manager.drmsantos.local/api"
-$AgentToken = "eyJ..."   # token JWT do dashboard
+# 1. Clona o repositório
+git clone https://github.com/drmsantos/wsl-manager.git C:\wsl-manager
+
+# 2. Inicia o agente
+cd C:\wsl-manager
+.\Iniciar-WSLManager.bat
+
+# 3. Abre no browser
+# http://localhost:7745/app
 ```
 
-### 3. Instalar como tarefa agendada
+### Iniciar automaticamente com o Windows
 
 ```powershell
-# Executa uma vez para instalar
-.\wsl-agent.ps1 -Install
-```
-
-O agente inicia automaticamente no próximo login do Windows.
-
----
-
-## Teste local (Docker Compose)
-
-```bash
-docker compose up --build
-# Acesse: http://localhost:8080
+$startup = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut("$startup\WSLManager.lnk")
+$shortcut.TargetPath = "C:\wsl-manager\Iniciar-WSLManager.bat"
+$shortcut.WorkingDirectory = "C:\wsl-manager"
+$shortcut.WindowStyle = 7
+$shortcut.Save()
+Write-Host "Atalho criado!" -ForegroundColor Green
 ```
 
 ---
 
-## Estrutura do projecto
+## 🚀 Como usar
+
+### 1️⃣ Provisionar uma nova distro WSL
+
+1. Abre `http://localhost:7745/app`
+2. Vai a **Distro WSL** → escolhe Ubuntu, Debian, Fedora, etc.
+3. Configura RAM, CPUs e hostname
+4. Cria o utilizador e selecciona as ferramentas
+5. Clica **Instalar Agora** — o progresso aparece em tempo real
+
+### 2️⃣ Exportar perfil
 
 ```
-wsl-manager-v3/
-├── backend/
-│   ├── main.py           # FastAPI app
-│   ├── auth.py           # JWT
-│   ├── database.py       # SQLite async
-│   ├── models.py         # Pydantic models
-│   └── requirements.txt
-├── frontend/
-│   ├── wsl_manager.html  # UI completa
-│   └── nginx.conf        # Proxy /api → backend
-├── agent/
-│   └── wsl-agent.ps1     # Agente Windows (cliente polling)
-├── k8s/
-│   └── manifests.yaml    # Namespace, PVC, Deployments, Ingress
-├── .github/workflows/
-│   └── build.yml         # CI/CD GHCR
-├── Dockerfile.backend
-├── Dockerfile.frontend
-└── docker-compose.yml
+Exportar → Selecciona distro → Clica "Exportar utilizador" ou "Exportar TODOS"
+→ Download automático do .tar.gz
+```
+
+### 3️⃣ Importar perfil noutro PC
+
+```
+Importar → Selecciona distro destino → Arrasta o .tar.gz
+→ "Importar TODOS" cria utilizadores automaticamente e restaura os dotfiles
 ```
 
 ---
 
-## API
+## 🛠️ Ferramentas suportadas
+
+<details>
+<summary><b>☸️ Kubernetes & OpenShift</b></summary>
+
+`kubectl` `oc` `helm` `k9s` `kubectx` `kubens` `stern` `argocd` `tekton` `kustomize`
+
+</details>
+
+<details>
+<summary><b>☁️ Cloud & IaC</b></summary>
+
+`terraform` `ansible` `aws-cli` `azure-cli` `gcloud` `oci-cli` `pulumi`
+
+</details>
+
+<details>
+<summary><b>🗄️ Bases de dados</b></summary>
+
+`sqlplus` `mysql-client` `psql` `mongosh` `redis-cli`
+
+</details>
+
+<details>
+<summary><b>🐳 Containers & CI/CD</b></summary>
+
+`docker` `podman` `skopeo` `buildah`
+
+</details>
+
+<details>
+<summary><b>💻 Dev & Linguagens</b></summary>
+
+`python3` `node.js` `go` `java` `rust` `vs-code`
+
+</details>
+
+<details>
+<summary><b>🐚 Shell & Produtividade</b></summary>
+
+`oh-my-zsh` `fzf` `jq` `yq` `tmux` `bat` `eza` `htop` `ripgrep` `zoxide` `starship`
+
+</details>
+
+---
+
+## 📁 Estrutura
+
+```
+C:\wsl-manager\
+├── 📄 wsl-agent.ps1           # Agente HTTP local (porta 7745)
+├── 🌐 wsl_manager.html        # Interface web completa
+├── ▶️  Iniciar-WSLManager.bat  # Script de arranque
+└── 📋 Install-WSL.ps1         # Instalador alternativo
+```
+
+---
+
+## 🔧 API do Agente
+
+O agente expõe uma API REST em `http://localhost:7745`:
 
 | Endpoint | Método | Descrição |
-|---|---|---|
-| `POST /api/admin/login` | POST | Login admin |
-| `GET /api/pcs` | GET | Lista PCs |
-| `POST /api/pcs` | POST | Registrar PC + gerar token |
-| `DELETE /api/pcs/{id}` | DELETE | Remover PC |
-| `POST /api/agent/heartbeat` | POST | Agente envia métricas |
-| `GET /api/agent/commands` | GET | Agente busca comandos |
-| `POST /api/agent/result` | POST | Agente posta progresso |
-| `POST /api/pcs/{id}/provision` | POST | Enfileirar provisionamento |
-| `GET /api/pcs/{id}/stream` | GET | SSE — log em tempo real |
-| `GET /api/pcs/{id}/history` | GET | Histórico de comandos |
+|----------|--------|-----------|
+| `/ping` | GET | Verifica se o agente está online |
+| `/status` | GET | Estado do agente e distros instaladas |
+| `/distros` | GET | Lista distros WSL instaladas |
+| `/run` | POST | Inicia provisionamento (SSE streaming) |
+| `/export` | POST | Exporta perfil de um utilizador |
+| `/export-all` | POST | Exporta todos os perfis |
+| `/import` | POST | Importa perfil para um utilizador |
+| `/import-all` | POST | Importa todos os perfis do backup |
+| `/remove` | POST | Remove uma distro WSL |
+| `/app` | GET | Serve a interface web |
 
 ---
 
-## Autor
+## 👤 Autor
 
-**Diego Regis M. F. dos Santos**  
-DevOps & Infrastructure — OpenLabs
+<div align="center">
+
+**Diego Regis M. F. dos Santos**
+Analista de Sistemas Pleno — DevOps & Infrastructure
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/diego-regis-361a0a20)
+[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/drmsantos)
+
+</div>
+
+---
+
+<div align="center">
+<sub>Feito com ☕ e muito PowerShell</sub>
+</div>
