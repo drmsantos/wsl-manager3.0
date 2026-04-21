@@ -1,0 +1,199 @@
+# =============================================================================
+# WSL Manager v3 — Manifests Kubernetes (RKE2 rkeopl)
+# Autor: Diego Regis M. F. dos Santos
+# Email: diego-f-santos@openlabs.com.br
+# Time:  OpenLabs - DevOps | Infra
+# Versão: 3.0.0
+#
+# Deploy:
+#   kubectl apply -f k8s/manifests.yaml
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wsl-manager
+  labels:
+    app.kubernetes.io/name: wsl-manager
+
+---
+# ── Secret: JWT + Admin password ─────────────────────────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wsl-manager-secret
+  namespace: wsl-manager
+type: Opaque
+stringData:
+  JWT_SECRET: "TROQUE-POR-UMA-CHAVE-FORTE-E-ALEATORIA-32CHARS"
+  ADMIN_PASSWORD: "SuaSenhaDeAdmin2026!"
+
+---
+# ── PVC: banco SQLite (Longhorn) ──────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wsl-manager-data
+  namespace: wsl-manager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# ── Deployment: Backend FastAPI ───────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wsl-manager-backend
+  namespace: wsl-manager
+  labels:
+    app: wsl-manager-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wsl-manager-backend
+  template:
+    metadata:
+      labels:
+        app: wsl-manager-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/drmsantos/wsl-manager-backend:3.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DB_PATH
+              value: /data/wsl-manager.db
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: wsl-manager-secret
+                  key: JWT_SECRET
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wsl-manager-secret
+                  key: ADMIN_PASSWORD
+            - name: TZ
+              value: America/Sao_Paulo
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wsl-manager-data
+
+---
+# ── Service: Backend ──────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wsl-manager-backend
+  namespace: wsl-manager
+spec:
+  selector:
+    app: wsl-manager-backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+# ── Deployment: Frontend nginx ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wsl-manager-frontend
+  namespace: wsl-manager
+  labels:
+    app: wsl-manager-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wsl-manager-frontend
+  template:
+    metadata:
+      labels:
+        app: wsl-manager-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/drmsantos/wsl-manager-frontend:3.0.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+
+---
+# ── Service: Frontend ─────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: wsl-manager-frontend
+  namespace: wsl-manager
+spec:
+  selector:
+    app: wsl-manager-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+# ── Ingress ───────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wsl-manager
+  namespace: wsl-manager
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # SSE: desabilita buffering no ingress também
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: wsl-manager.drmsantos.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wsl-manager-frontend
+                port:
+                  number: 80

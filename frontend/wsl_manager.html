@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSL Manager v3</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Cabinet+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d0f14; --bg2:#12151c; --bg3:#161a23;
+  --card:#1a1e28; --card2:#1e2330;
+  --border:#252b38; --border2:#2e3547;
+  --sidebar-bg:#0a0c10; --sidebar-border:#161a23;
+  --sidebar-text:#6b7280; --sidebar-active:#ffffff; --sidebar-accent:#4f8eff;
+  --accent:#3b82f6; --accent-h:#2563eb;
+  --accent2:#10b981; --accent2-h:#059669;
+  --warn:#f59e0b; --danger:#ef4444;
+  --text:#e2e8f0; --text2:#94a3b8; --muted:#4b5563;
+  --mono:'DM Mono',monospace; --sans:'Cabinet Grotesk',sans-serif;
+  --r:8px; --r2:12px; --r3:16px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;min-height:100vh;font-size:14px}
+
+/* SIDEBAR */
+.sidebar{width:220px;flex-shrink:0;background:var(--sidebar-bg);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:50;overflow-y:auto}
+.sidebar-logo{padding:20px 18px 16px;border-bottom:1px solid var(--sidebar-border);display:flex;align-items:center;gap:10px}
+.logo-box{width:30px;height:30px;background:var(--sidebar-accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:13px;flex-shrink:0}
+.logo-text{font-size:13px;font-weight:700;color:#fff;line-height:1.2}
+.logo-ver{font-family:var(--mono);font-size:9px;color:var(--sidebar-text)}
+.nav-section{padding:16px 10px 4px}
+.nav-label{font-family:var(--mono);font-size:9px;color:var(--sidebar-text);letter-spacing:.12em;text-transform:uppercase;padding:0 8px 6px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer;transition:all .12s;font-size:12px;font-weight:600;color:var(--sidebar-text);margin-bottom:1px;user-select:none}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:rgba(79,142,255,.15);color:var(--sidebar-accent)}
+.nav-item .ni-icon{font-size:11px;width:16px;text-align:center;flex-shrink:0}
+.ni-badge{margin-left:auto;background:var(--sidebar-accent);color:#fff;font-family:var(--mono);font-size:9px;font-weight:700;padding:1px 6px;border-radius:20px}
+.sidebar-footer{margin-top:auto;padding:12px 10px;border-top:1px solid var(--sidebar-border)}
+.pc-chip{background:rgba(255,255,255,.06);border:1px solid var(--sidebar-border);border-radius:8px;padding:8px 12px;font-family:var(--mono);font-size:10px;color:var(--sidebar-text)}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot.online{background:#10b981;animation:pulse 2s infinite}
+.dot.offline{background:#4b5563}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;min-height:100vh;overflow-y:auto}
+.topbar{background:var(--card);border-bottom:1.5px solid var(--border);padding:0 28px;height:52px;min-height:52px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:40}
+.topbar-title{font-size:15px;font-weight:700}
+.topbar-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:4px}
+.topbar-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.content{padding:28px 32px;flex:1}
+.page{display:none}
+.page.active{display:block;animation:fadeUp .18s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page-head{margin-bottom:24px}
+.page-head h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.page-head p{font-size:13px;color:var(--text2)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r);border:none;cursor:pointer;font-family:var(--sans);font-size:12px;font-weight:700;transition:all .12s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-h)}
+.btn-success{background:var(--accent2);color:#fff}
+.btn-success:hover{background:var(--accent2-h)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{background:#dc2626cc}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-sm{padding:5px 11px;font-size:11px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:20px}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card-title{font-size:13px;font-weight:700}
+
+/* GRID PCS */
+.pc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.pc-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:18px;transition:border-color .15s;cursor:pointer}
+.pc-card:hover{border-color:var(--border2)}
+.pc-card.selected{border-color:var(--accent)}
+.pc-card-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.pc-avatar{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.pc-name{font-size:14px;font-weight:700}
+.pc-host{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+.pc-status{margin-left:auto;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:600}
+.pc-status.online{color:#10b981}
+.pc-status.offline{color:var(--muted)}
+.pc-metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+.pc-metric{background:var(--bg2);border-radius:7px;padding:8px 10px}
+.pc-metric-label{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
+.pc-metric-val{font-size:12px;font-weight:700}
+.pc-bar{height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden}
+.pc-bar-fill{height:100%;border-radius:2px;transition:width .4s}
+.bar-cpu{background:linear-gradient(90deg,#3b82f6,#8b5cf6)}
+.bar-ram{background:linear-gradient(90deg,#10b981,#34d399)}
+.bar-disk{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.bar-warn{background:linear-gradient(90deg,#ef4444,#f87171)!important}
+.pc-distros{display:flex;flex-wrap:wrap;gap:4px}
+.distro-pill{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--border);color:var(--text2)}
+.distro-pill.running{border-color:var(--accent2);color:var(--accent2)}
+.pc-actions{display:flex;gap:6px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex;animation:fadeIn .15s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal{background:var(--card);border:1px solid var(--border2);border-radius:var(--r3);width:100%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-head{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.modal-title{font-size:15px;font-weight:800}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;font-size:16px}
+.modal-close:hover{color:var(--text);background:var(--bg3)}
+.modal-body{padding:20px 24px;overflow-y:auto;flex:1}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
+
+/* FORM */
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px}
+.form-input{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;transition:border-color .12s}
+.form-input:focus{border-color:var(--accent)}
+.form-input::placeholder{color:var(--muted)}
+textarea.form-input{resize:vertical;min-height:80px;font-family:var(--mono);font-size:12px}
+
+/* TOKEN BOX */
+.token-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:14px 16px;margin-top:12px}
+.token-label{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.token-value{font-family:var(--mono);font-size:11px;color:var(--accent);word-break:break-all;line-height:1.5}
+.token-copy-btn{margin-top:10px}
+
+/* CONSOLE SSE */
+.console{background:#060810;border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;font-family:var(--mono);font-size:11px;line-height:1.7;max-height:380px;overflow-y:auto;color:#c9d1d9}
+.console-line{display:flex;gap:10px;align-items:baseline}
+.console-ts{color:var(--muted);flex-shrink:0;font-size:10px}
+.console-msg{flex:1;word-break:break-word}
+.console-msg.ok{color:#3fb950}
+.console-msg.warn{color:#f59e0b}
+.console-msg.error{color:#f85149}
+.console-msg.step{color:#58a6ff;font-weight:700}
+.console-msg.done-ok{color:#3fb950;font-weight:700}
+.console-msg.done-fail{color:#f85149;font-weight:700}
+.progress-bar-wrap{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:12px}
+.progress-bar{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s}
+
+/* LOGIN */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-card{background:var(--card);border:1px solid var(--border2);border-radius:var(--r3);padding:40px 36px;width:100%;max-width:380px}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.login-title{font-size:22px;font-weight:800;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--text2)}
+.login-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;border-radius:var(--r);padding:10px 14px;font-size:12px;margin-bottom:14px;display:none}
+
+/* ALERT */
+.alert{padding:10px 14px;border-radius:var(--r);font-size:12px;margin-bottom:14px;display:flex;gap:8px;align-items:flex-start}
+.alert-info{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);color:#93c5fd}
+.alert-warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:#fcd34d}
+.alert-success{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);color:#6ee7b7}
+
+/* TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text2)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg2)}
+.badge{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
+.badge-pending{background:rgba(245,158,11,.15);color:#fcd34d}
+.badge-running{background:rgba(59,130,246,.15);color:#93c5fd}
+.badge-done{background:rgba(16,185,129,.15);color:#6ee7b7}
+.badge-failed{background:rgba(239,68,68,.15);color:#fca5a5}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty-icon{font-size:40px;margin-bottom:12px}
+.empty-title{font-size:15px;font-weight:700;color:var(--text2);margin-bottom:6px}
+.empty-sub{font-size:12px}
+
+/* SPINNER */
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ─────────────────────────────────────────────────────────────── -->
+<div id="login-screen" class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-box">W</div>
+      <div>
+        <div class="login-title">WSL Manager</div>
+        <div class="login-sub">v3.0.0 — OpenLabs</div>
+      </div>
+    </div>
+    <div class="login-error" id="login-error"></div>
+    <div class="form-group">
+      <label class="form-label">Senha de administrador</label>
+      <input class="form-input" type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" style="width:100%" id="login-btn" onclick="doLogin()">
+      Entrar
+    </button>
+  </div>
+</div>
+
+<!-- ── APP ───────────────────────────────────────────────────────────────── -->
+<div id="app" style="display:none;width:100%;display:none">
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-box">W</div>
+    <div><div class="logo-text">WSL Manager</div><div class="logo-ver">v3.0.0</div></div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Principal</div>
+    <div class="nav-item active" onclick="showPage('pcs')" id="nav-pcs">
+      <span class="ni-icon">🖥</span> PCs
+      <span class="ni-badge" id="badge-pcs">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('provision')" id="nav-provision">
+      <span class="ni-icon">⚙</span> Provisionar
+    </div>
+    <div class="nav-item" onclick="showPage('history')" id="nav-history">
+      <span class="ni-icon">📋</span> Histórico
+    </div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Config</div>
+    <div class="nav-item" onclick="showPage('tokens')" id="nav-tokens">
+      <span class="ni-icon">🔑</span> Tokens / PCs
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="pc-chip">
+      <span class="dot online" id="api-dot"></span>
+      <span id="api-status-label">conectado</span>
+    </div>
+    <div style="margin-top:8px">
+      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="doLogout()">Sair</button>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <span class="topbar-title" id="topbar-title">PCs</span>
+    <span class="topbar-sub" id="topbar-sub"></span>
+    <div class="topbar-actions" id="topbar-actions"></div>
+  </div>
+  <div class="content">
+
+    <!-- PAGE: PCS -->
+    <div class="page active" id="page-pcs">
+      <div class="page-head">
+        <h1>PCs Registrados</h1>
+        <p>Monitorização em tempo real de todas as máquinas Windows com agente ativo.</p>
+      </div>
+      <div id="pcs-loading" style="color:var(--muted);font-family:var(--mono);font-size:12px">A carregar...</div>
+      <div class="pc-grid" id="pc-grid" style="display:none"></div>
+      <div class="empty" id="pcs-empty" style="display:none">
+        <div class="empty-icon">🖥</div>
+        <div class="empty-title">Nenhum PC registrado</div>
+        <div class="empty-sub">Vai a <strong>Tokens / PCs</strong> para registrar o primeiro PC.</div>
+      </div>
+    </div>
+
+    <!-- PAGE: PROVISION -->
+    <div class="page" id="page-provision">
+      <div class="page-head">
+        <h1>Provisionar Distro</h1>
+        <p>Configura e instala uma nova distro WSL num PC remoto.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px" id="provision-layout">
+        <!-- Coluna esquerda: config -->
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-head"><span class="card-title">🖥 PC de destino</span></div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label">PC</label>
+              <select class="form-input" id="prov-pc">
+                <option value="">— selecionar PC —</option>
+              </select>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-head"><span class="card-title">🐧 Distro</span></div>
+            <div class="form-group">
+              <label class="form-label">Distro WSL</label>
+              <select class="form-input" id="prov-distro">
+                <option value="Ubuntu-24.04">Ubuntu 24.04 LTS</option>
+                <option value="Ubuntu-22.04">Ubuntu 22.04 LTS</option>
+                <option value="Debian">Debian 12</option>
+                <option value="kali-linux">Kali Linux</option>
+                <option value="openSUSE-Leap-15.6">openSUSE Leap 15.6</option>
+              </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">RAM (GB)</label>
+                <input class="form-input" type="number" id="prov-ram" value="4" min="1" max="64">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">vCPUs</label>
+                <input class="form-input" type="number" id="prov-cpu" value="2" min="1" max="32">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">Swap (GB)</label>
+                <input class="form-input" type="number" id="prov-swap" value="2" min="0" max="16">
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-head"><span class="card-title">👤 Utilizador</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="form-group">
+                <label class="form-label">Username</label>
+                <input class="form-input" id="prov-user" value="devops" placeholder="devops">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Shell</label>
+                <select class="form-input" id="prov-shell">
+                  <option value="zsh">zsh</option>
+                  <option value="bash">bash</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">Git Name</label>
+                <input class="form-input" id="prov-gitname" placeholder="Seu Nome">
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label class="form-label">Git Email</label>
+                <input class="form-input" id="prov-gitemail" placeholder="email@openlabs.com.br">
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:10px;margin-bottom:0">
+              <label class="form-label">Hostname WSL</label>
+              <input class="form-input" id="prov-hostname" value="wsl-devbox" placeholder="wsl-devbox">
+            </div>
+          </div>
+        </div>
+        <!-- Coluna direita: ferramentas + console -->
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-head"><span class="card-title">🛠 Ferramentas</span></div>
+            <div id="tools-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="card-title">📟 Console</span>
+              <span id="prov-status-badge"></span>
+            </div>
+            <div class="progress-bar-wrap" id="prov-progress-wrap" style="display:none">
+              <div class="progress-bar" id="prov-progress" style="width:0%"></div>
+            </div>
+            <div class="console" id="prov-console">
+              <div style="color:var(--muted)">Aguardando início do provisionamento...</div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px">
+              <button class="btn btn-primary" id="prov-btn" onclick="startProvision()">
+                ▶ Provisionar
+              </button>
+              <button class="btn btn-ghost btn-sm" onclick="clearConsole()">Limpar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: HISTORY -->
+    <div class="page" id="page-history">
+      <div class="page-head">
+        <h1>Histórico</h1>
+        <p>Registo de todos os comandos executados.</p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Comandos recentes</span>
+          <select class="form-input" style="width:200px;padding:5px 10px;font-size:12px" id="history-pc-filter" onchange="loadHistory()">
+            <option value="">Todos os PCs</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PC</th><th>Tipo</th><th>Distro/User</th><th>Status</th><th>Iniciado</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">A carregar...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: TOKENS -->
+    <div class="page" id="page-tokens">
+      <div class="page-head">
+        <h1>Tokens / PCs</h1>
+        <p>Gerencie os PCs registrados e os tokens JWT dos agentes.</p>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">PCs registrados</span>
+          <button class="btn btn-primary btn-sm" onclick="openAddPCModal()">+ Registrar PC</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Nome</th><th>Descrição</th><th>Último heartbeat</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="tokens-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">A carregar...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="alert alert-info" style="margin-top:16px">
+        <span>ℹ</span>
+        <span>Após registrar um PC, copie o token JWT e configure-o na variável <code style="font-family:var(--mono)">$AgentToken</code> do <strong>wsl-agent.ps1</strong>.</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Adicionar PC -->
+<div class="modal-overlay" id="modal-add-pc">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Registrar novo PC</span>
+      <button class="modal-close" onclick="closeModal('modal-add-pc')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nome do PC</label>
+        <input class="form-input" id="new-pc-name" placeholder="DIEGO-NOTEBOOK">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descrição (opcional)</label>
+        <input class="form-input" id="new-pc-desc" placeholder="Notebook pessoal">
+      </div>
+      <div id="new-token-area" style="display:none">
+        <div class="alert alert-success">
+          <span>✅</span>
+          <span>PC registrado! Copie o token abaixo e configure no <strong>wsl-agent.ps1</strong>.</span>
+        </div>
+        <div class="token-box">
+          <div class="token-label">Token JWT do agente</div>
+          <div class="token-value" id="new-token-value"></div>
+          <button class="btn btn-ghost btn-sm token-copy-btn" onclick="copyToken()">📋 Copiar token</button>
+        </div>
+        <div class="alert alert-warn" style="margin-top:12px">
+          <span>⚠</span>
+          <span>Guarda este token em lugar seguro — não será exibido novamente.</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-pc')">Fechar</button>
+      <button class="btn btn-primary" id="add-pc-btn" onclick="addPC()">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Regen token -->
+<div class="modal-overlay" id="modal-token-view">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="token-view-title">Token do PC</span>
+      <button class="modal-close" onclick="closeModal('modal-token-view')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-warn">
+        <span>⚠</span>
+        <span>Gerar um novo token invalida o anterior. O agente precisará ser reconfigurado.</span>
+      </div>
+      <div class="token-box">
+        <div class="token-label">Token JWT atual</div>
+        <div class="token-value" id="token-view-value">—</div>
+        <button class="btn btn-ghost btn-sm token-copy-btn" onclick="copyTokenView()">📋 Copiar</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-token-view')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================================================
+// CONFIG
+// =============================================================================
+const API = '/api';
+let _token = localStorage.getItem('wslm_token') || '';
+let _pcs   = [];
+let _pollTimer   = null;
+let _historyPcs  = {};
+let _sseSource   = null;
+let _activePcId  = null;
+
+// =============================================================================
+// AUTH
+// =============================================================================
+async function doLogin() {
+  const pwd = document.getElementById('login-password').value;
+  const err = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  if (!pwd) return;
+  btn.disabled = true;
+  btn.textContent = 'Entrando...';
+  err.style.display = 'none';
+  try {
+    const r = await apiFetch('/admin/login', 'POST', { password: pwd }, true);
+    _token = r.token;
+    localStorage.setItem('wslm_token', _token);
+    showApp();
+  } catch(e) {
+    err.textContent = 'Senha incorreta.';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem('wslm_token');
+  _token = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  stopPolling();
+}
+
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+// =============================================================================
+// API HELPER
+// =============================================================================
+async function apiFetch(path, method='GET', body=null, noAuth=false) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (!noAuth && _token) headers['Authorization'] = 'Bearer ' + _token;
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (r.status === 401) { doLogout(); throw new Error('Unauthorized'); }
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t || r.statusText);
+  }
+  const ct = r.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return r.json();
+  return r.text();
+}
+
+// =============================================================================
+// APP INIT
+// =============================================================================
+async function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  await loadPCs();
+  buildToolsGrid();
+  startPolling();
+}
+
+async function checkAuth() {
+  if (!_token) return;
+  try {
+    await apiFetch('/admin/verify');
+    showApp();
+  } catch(e) {
+    // token inválido - mostra login
+  }
+}
+
+// =============================================================================
+// NAVIGATION
+// =============================================================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  const titles = { pcs: 'PCs', provision: 'Provisionar', history: 'Histórico', tokens: 'Tokens / PCs' };
+  document.getElementById('topbar-title').textContent = titles[name] || name;
+  document.getElementById('topbar-sub').textContent = '';
+  if (name === 'history') loadHistory();
+  if (name === 'tokens') renderTokensTable();
+  if (name === 'provision') loadPCsIntoSelect();
+}
+
+// =============================================================================
+// PCs
+// =============================================================================
+async function loadPCs() {
+  try {
+    _pcs = await apiFetch('/pcs');
+    renderPCGrid();
+    renderTokensTable();
+    loadPCsIntoSelect();
+    document.getElementById('badge-pcs').textContent = _pcs.length;
+  } catch(e) {
+    console.error('loadPCs:', e);
+  }
+}
+
+function renderPCGrid() {
+  const grid    = document.getElementById('pc-grid');
+  const loading = document.getElementById('pcs-loading');
+  const empty   = document.getElementById('pcs-empty');
+  loading.style.display = 'none';
+
+  if (!_pcs.length) {
+    grid.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.style.display  = 'grid';
+
+  grid.innerHTML = _pcs.map(pc => {
+    const online   = pc.online;
+    const metrics  = tryParse(pc.metrics, {});
+    const distros  = tryParse(pc.distros, []);
+    const cpuPct   = metrics.cpu_pct   || 0;
+    const ramPct   = metrics.ram_pct   || 0;
+    const diskPct  = metrics.disk_pct  || 0;
+    const ramUsed  = metrics.ram_used_mb  || 0;
+    const ramTotal = metrics.ram_total_mb || 0;
+    const diskUsed = metrics.disk_used_gb  || 0;
+    const diskTotal= metrics.disk_total_gb || 0;
+
+    const distroHtml = distros.length
+      ? distros.map(d => `<span class="distro-pill ${d.running?'running':''}">${d.name}</span>`).join('')
+      : '<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">nenhuma distro</span>';
+
+    const barClass = (v) => v > 85 ? 'bar-warn' : '';
+
+    return `
+    <div class="pc-card" onclick="selectPC('${pc.pc_id}')">
+      <div class="pc-card-head">
+        <div class="pc-avatar">🖥</div>
+        <div>
+          <div class="pc-name">${pc.name}</div>
+          <div class="pc-host">${pc.hostname || pc.description || '—'}</div>
+        </div>
+        <div class="pc-status ${online?'online':'offline'}">
+          <span class="dot ${online?'online':'offline'}"></span>
+          ${online?'online':'offline'}
+        </div>
+      </div>
+      <div class="pc-metrics">
+        <div class="pc-metric">
+          <div class="pc-metric-label">CPU</div>
+          <div class="pc-metric-val">${cpuPct}%</div>
+          <div class="pc-bar"><div class="pc-bar-fill bar-cpu ${barClass(cpuPct)}" style="width:${cpuPct}%"></div></div>
+        </div>
+        <div class="pc-metric">
+          <div class="pc-metric-label">RAM</div>
+          <div class="pc-metric-val">${ramUsed}/${ramTotal}MB</div>
+          <div class="pc-bar"><div class="pc-bar-fill bar-ram ${barClass(ramPct)}" style="width:${ramPct}%"></div></div>
+        </div>
+        <div class="pc-metric">
+          <div class="pc-metric-label">Disco</div>
+          <div class="pc-metric-val">${diskUsed}/${diskTotal}GB</div>
+          <div class="pc-bar"><div class="pc-bar-fill bar-disk ${barClass(diskPct)}" style="width:${diskPct}%"></div></div>
+        </div>
+      </div>
+      <div class="pc-distros">${distroHtml}</div>
+      <div class="pc-actions">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();provisionPC('${pc.pc_id}')">⚙ Provisionar</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openTokenModal('${pc.pc_id}','${pc.name}')">🔑 Token</button>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deletePC('${pc.pc_id}','${pc.name}')" style="margin-left:auto">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectPC(pcId) {
+  // highlight selecionado
+  document.querySelectorAll('.pc-card').forEach(c => c.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+}
+
+function provisionPC(pcId) {
+  loadPCsIntoSelect(pcId);
+  showPage('provision');
+}
+
+async function deletePC(pcId, name) {
+  if (!confirm(`Remover PC "${name}"? Esta ação não pode ser desfeita.`)) return;
+  try {
+    await apiFetch('/pcs/' + pcId, 'DELETE');
+    await loadPCs();
+  } catch(e) {
+    alert('Erro ao remover PC: ' + e.message);
+  }
+}
+
+function loadPCsIntoSelect(selectPcId='') {
+  const sel = document.getElementById('prov-pc');
+  sel.innerHTML = '<option value="">— selecionar PC —</option>' +
+    _pcs.map(p => `<option value="${p.pc_id}" ${p.pc_id===selectPcId?'selected':''}>${p.name} ${p.online?'🟢':'⚫'}</option>`).join('');
+
+  // história filter
+  const hsel = document.getElementById('history-pc-filter');
+  hsel.innerHTML = '<option value="">Todos os PCs</option>' +
+    _pcs.map(p => `<option value="${p.pc_id}">${p.name}</option>`).join('');
+}
+
+// =============================================================================
+// TOKENS PAGE
+// =============================================================================
+function renderTokensTable() {
+  const tbody = document.getElementById('tokens-tbody');
+  if (!_pcs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Nenhum PC registrado</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _pcs.map(pc => {
+    const ls = pc.last_seen ? new Date(pc.last_seen).toLocaleString('pt-BR') : '—';
+    return `<tr>
+      <td style="font-weight:700">${pc.name}</td>
+      <td style="color:var(--muted)">${pc.description || '—'}</td>
+      <td style="font-family:var(--mono);font-size:10px">${ls}</td>
+      <td><span class="badge ${pc.online?'badge-done':'badge-failed'}">${pc.online?'online':'offline'}</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openTokenModal('${pc.pc_id}','${pc.name}')">Ver token</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function openAddPCModal() {
+  document.getElementById('new-pc-name').value = '';
+  document.getElementById('new-pc-desc').value = '';
+  document.getElementById('new-token-area').style.display = 'none';
+  document.getElementById('add-pc-btn').style.display = 'inline-flex';
+  openModal('modal-add-pc');
+}
+
+async function addPC() {
+  const name = document.getElementById('new-pc-name').value.trim();
+  const desc = document.getElementById('new-pc-desc').value.trim();
+  if (!name) { alert('Nome obrigatório'); return; }
+  const btn = document.getElementById('add-pc-btn');
+  btn.disabled = true;
+  try {
+    const r = await apiFetch('/pcs', 'POST', { name, description: desc });
+    document.getElementById('new-token-value').textContent = r.token;
+    document.getElementById('new-token-area').style.display = 'block';
+    btn.style.display = 'none';
+    await loadPCs();
+  } catch(e) {
+    alert('Erro: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function openTokenModal(pcId, pcName) {
+  // Token não é re-exibido após criação por segurança — apenas instrução
+  document.getElementById('token-view-title').textContent = 'Token — ' + pcName;
+  document.getElementById('token-view-value').textContent =
+    'O token foi exibido apenas no momento do registro.\nPara obter um novo token, remova e re-registre o PC.';
+  openModal('modal-token-view');
+}
+
+function copyToken() {
+  navigator.clipboard.writeText(document.getElementById('new-token-value').textContent);
+  const btn = document.querySelector('.token-copy-btn');
+  btn.textContent = '✅ Copiado!';
+  setTimeout(() => btn.textContent = '📋 Copiar token', 2000);
+}
+
+function copyTokenView() {
+  navigator.clipboard.writeText(document.getElementById('token-view-value').textContent);
+}
+
+// =============================================================================
+// PROVISION
+// =============================================================================
+const TOOLS = [
+  { id:'ohmyzsh',   label:'Oh My Zsh',    group:'Shell' },
+  { id:'kubectl',   label:'kubectl',       group:'K8s' },
+  { id:'oc',        label:'oc CLI',        group:'K8s' },
+  { id:'helm',      label:'Helm v3',       group:'K8s' },
+  { id:'k9s',       label:'k9s',           group:'K8s' },
+  { id:'kubectx',   label:'kubectx+ns',    group:'K8s' },
+  { id:'argocd',    label:'ArgoCD CLI',    group:'K8s' },
+  { id:'terraform', label:'Terraform',     group:'IaC' },
+  { id:'ansible',   label:'Ansible',       group:'IaC' },
+  { id:'docker',    label:'Docker CLI',    group:'Container' },
+  { id:'awscli',    label:'AWS CLI',       group:'Cloud' },
+  { id:'azcli',     label:'Azure CLI',     group:'Cloud' },
+  { id:'python3',   label:'Python 3',      group:'Dev' },
+  { id:'nodejs',    label:'Node.js 20',    group:'Dev' },
+  { id:'go',        label:'Go 1.22',       group:'Dev' },
+  { id:'java',      label:'Java 21',       group:'Dev' },
+  { id:'fzf',       label:'fzf',           group:'Shell' },
+  { id:'jq',        label:'jq + yq',       group:'Shell' },
+  { id:'tmux',      label:'tmux',          group:'Shell' },
+  { id:'htop',      label:'htop + btop',   group:'Shell' },
+  { id:'sqlplus',   label:'SQLPlus 21c',   group:'DB' },
+  { id:'psql',      label:'psql',          group:'DB' },
+  { id:'mysql',     label:'MySQL client',  group:'DB' },
+  { id:'vscode',    label:'VS Code alias', group:'Dev' },
+];
+
+function buildToolsGrid() {
+  const grid = document.getElementById('tools-grid');
+  // Agrupar
+  const groups = {};
+  TOOLS.forEach(t => { if(!groups[t.group]) groups[t.group]=[]; groups[t.group].push(t); });
+  let html = '';
+  for (const [g, tools] of Object.entries(groups)) {
+    html += `<div style="grid-column:1/-1;font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">${g}</div>`;
+    tools.forEach(t => {
+      html += `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);transition:border-color .1s" onmouseover="this.style.borderColor='var(--border2)'" onmouseout="this.style.borderColor='var(--border)'">
+        <input type="checkbox" id="tool-${t.id}" style="accent-color:var(--accent)"> ${t.label}
+      </label>`;
+    });
+  }
+  grid.innerHTML = html;
+}
+
+function getSelectedTools() {
+  return TOOLS.filter(t => document.getElementById('tool-' + t.id)?.checked).map(t => t.id);
+}
+
+let _currentProvCmdId = null;
+
+async function startProvision() {
+  const pcId    = document.getElementById('prov-pc').value;
+  const distro  = document.getElementById('prov-distro').value;
+  const user    = document.getElementById('prov-user').value.trim();
+  const shell   = document.getElementById('prov-shell').value;
+  const hostname= document.getElementById('prov-hostname').value.trim();
+  const gitname = document.getElementById('prov-gitname').value.trim();
+  const gitemail= document.getElementById('prov-gitemail').value.trim();
+  const ram     = parseInt(document.getElementById('prov-ram').value);
+  const cpu     = parseInt(document.getElementById('prov-cpu').value);
+  const swap    = parseInt(document.getElementById('prov-swap').value);
+  const tools   = getSelectedTools();
+
+  if (!pcId)   { alert('Seleciona um PC'); return; }
+  if (!user)   { alert('Username obrigatório'); return; }
+
+  const config = {
+    distro: { wslName: distro },
+    wsl:    { memoryGB: ram, cpus: cpu, swapGB: swap, hostname, systemd: true, automount: true, interop: true, generateResolvConf: true, generateHosts: true, timezone: 'America/Sao_Paulo' },
+    user:   { name: user, shell, zshTheme: 'powerlevel10k/powerlevel10k', gitName: gitname, gitEmail: gitemail, sudo: true },
+    tools,
+  };
+
+  const btn = document.getElementById('prov-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Enviando...';
+
+  clearConsole();
+  document.getElementById('prov-progress-wrap').style.display = 'block';
+  document.getElementById('prov-progress').style.width = '5%';
+
+  try {
+    const r = await apiFetch('/pcs/' + pcId + '/provision', 'POST', { config });
+    _currentProvCmdId = r.command_id;
+    appendConsole('step', 'Comando enviado ao agente... aguardando execução');
+    appendConsole('info', 'command_id: ' + r.command_id);
+
+    // Abre SSE para este PC
+    startSSE(pcId);
+
+    btn.innerHTML = '⏳ Aguardando agente...';
+  } catch(e) {
+    appendConsole('error', 'Erro ao enviar: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '▶ Provisionar';
+  }
+}
+
+function startSSE(pcId) {
+  if (_sseSource) { _sseSource.close(); _sseSource = null; }
+  _activePcId = pcId;
+  const url = API + '/pcs/' + pcId + '/stream';
+  const src = new EventSource(url + '?token=' + _token);
+  // EventSource não suporta headers customizados — usamos query param
+  // O backend precisa aceitar token via query string também
+  _sseSource = src;
+
+  src.onmessage = function(e) {
+    try {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'ping' || ev.type === 'connected') return;
+
+      if (ev.command_id && ev.command_id !== _currentProvCmdId) return;
+
+      const pct = ev.pct > 0 ? ev.pct : null;
+      if (pct) document.getElementById('prov-progress').style.width = pct + '%';
+
+      if (ev.type === 'done') {
+        const ok = ev.ok !== false;
+        appendConsole(ok ? 'done-ok' : 'done-fail', ok ? '✓ Provisionamento concluído!' : '✗ Falhou: ' + ev.msg);
+        document.getElementById('prov-progress').style.width = ok ? '100%' : document.getElementById('prov-progress').style.width;
+        const btn = document.getElementById('prov-btn');
+        btn.disabled = false;
+        btn.innerHTML = '▶ Provisionar';
+        src.close();
+        _sseSource = null;
+        loadPCs();
+        return;
+      }
+
+      appendConsole(ev.level || ev.type || 'info', ev.msg || '');
+    } catch(err) {}
+  };
+
+  src.onerror = function() {
+    appendConsole('warn', 'Conexão SSE interrompida. A reconectar...');
+  };
+}
+
+function appendConsole(level, msg) {
+  const c = document.getElementById('prov-console');
+  const now = new Date().toLocaleTimeString('pt-BR');
+  const div = document.createElement('div');
+  div.className = 'console-line';
+  div.innerHTML = `<span class="console-ts">${now}</span><span class="console-msg ${level}">${escHtml(msg)}</span>`;
+  // Remove placeholder se existir
+  if (c.children.length === 1 && c.children[0].style.color) c.innerHTML = '';
+  c.appendChild(div);
+  c.scrollTop = c.scrollHeight;
+}
+
+function clearConsole() {
+  document.getElementById('prov-console').innerHTML = '<div style="color:var(--muted)">Aguardando início do provisionamento...</div>';
+  document.getElementById('prov-progress').style.width = '0%';
+  document.getElementById('prov-progress-wrap').style.display = 'none';
+}
+
+// =============================================================================
+// HISTORY
+// =============================================================================
+async function loadHistory() {
+  const pcFilter = document.getElementById('history-pc-filter').value;
+  const tbody    = document.getElementById('history-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px"><span class="spinner"></span></td></tr>';
+
+  try {
+    // Carrega histórico de todos os PCs ou do selecionado
+    const targets = pcFilter ? [_pcs.find(p => p.pc_id === pcFilter)].filter(Boolean) : _pcs;
+    let allRows = [];
+    for (const pc of targets) {
+      const rows = await apiFetch('/pcs/' + pc.pc_id + '/history?limit=20');
+      allRows = allRows.concat(rows.map(r => ({ ...r, _pcName: pc.name })));
+    }
+    allRows.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    allRows = allRows.slice(0, 50);
+
+    if (!allRows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Nenhum histórico</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = allRows.map(row => {
+      const cmd   = row.command || {};
+      const type  = cmd.type  || '—';
+      const info  = cmd.config ? (cmd.config.distro?.wslName || '—') + ' / ' + (cmd.config.user?.name || '—') : (cmd.distro || '—');
+      const ts    = new Date(row.created_at).toLocaleString('pt-BR');
+      const badge = { pending:'badge-pending', running:'badge-running', done:'badge-done', failed:'badge-failed' }[row.status] || 'badge-pending';
+      return `<tr>
+        <td style="font-weight:600">${row._pcName}</td>
+        <td><span class="badge" style="background:var(--bg3)">${type}</span></td>
+        <td style="font-family:var(--mono);font-size:10px">${info}</td>
+        <td><span class="badge ${badge}">${row.status}</span></td>
+        <td style="font-family:var(--mono);font-size:10px;color:var(--muted)">${ts}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger);padding:20px">Erro: ' + escHtml(e.message) + '</td></tr>';
+  }
+}
+
+// =============================================================================
+// POLLING (atualiza PC grid a cada 8s)
+// =============================================================================
+function startPolling() {
+  stopPolling();
+  _pollTimer = setInterval(async () => {
+    try {
+      _pcs = await apiFetch('/pcs');
+      renderPCGrid();
+      document.getElementById('badge-pcs').textContent = _pcs.length;
+    } catch(e) {
+      document.getElementById('api-dot').className = 'dot offline';
+      document.getElementById('api-status-label').textContent = 'offline';
+    }
+  }, 8000);
+}
+
+function stopPolling() {
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+}
+
+// =============================================================================
+// UTILS
+// =============================================================================
+function openModal(id)  { document.getElementById(id).classList.add('open') }
+function closeModal(id) { document.getElementById(id).classList.remove('open') }
+function tryParse(v, def) { try { return typeof v === 'string' ? JSON.parse(v) : (v || def); } catch { return def; } }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+// Fechar modal clicando fora
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open') });
+});
+
+// =============================================================================
+// INIT
+// =============================================================================
+checkAuth();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# =============================================================================
+# WSL Manager v3 — Dockerfile Frontend (nginx)
+# Autor: Diego Regis M. F. dos Santos
+# Email: diego-f-santos@openlabs.com.br
+# Time:  OpenLabs - DevOps | Infra
+# Versão: 3.0.0
+# =============================================================================
+
+FROM nginx:1.27-alpine
+COPY frontend/wsl_manager.html /usr/share/nginx/html/index.html
+COPY frontend/nginx.conf        /etc/nginx/conf.d/default.conf
+EXPOSE 80
