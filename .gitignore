@@ -1,28 +1,17 @@
-# Python
 __pycache__/
 *.pyc
 *.pyo
 .venv/
 venv/
-
-# DB local
 *.db
 *.sqlite3
 /data/
-
-# Logs
 *.log
-
-# Secrets
 .env
 .env.local
-
-# OS
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Editor
 .vscode/
 .idea/
 *.swp
