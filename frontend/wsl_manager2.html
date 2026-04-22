@@ -1209,7 +1209,7 @@ async function authFetch(url, opts) {
 
 // O AGENT aponta para o PC ativo via backend Rancher
 // Todas as chamadas antigas ao AGENT são redirecionadas através do backend
-const AGENT = 'http://localhost:8765';
+const AGENT = { _pc: '' };
 
 // Wrapper que envia comandos ao PC ativo via backend
 async function agentPost(endpoint, body) {
@@ -1323,8 +1323,7 @@ window.fetch = async function(url, opts) {
     }
     if (path === '/run') {
       if (!activePcId) return new Response(JSON.stringify({ok:false}), {status:503,headers:{'Content-Type':'application/json'}});
-      const rawBody = opts && opts.body ? JSON.parse(opts.body) : {};
-      const body = rawBody.config ? rawBody : { config: rawBody };
+      const body = opts && opts.body ? JSON.parse(opts.body) : {};
       // Retorna SSE stream via backend
       return authFetch('/pcs/' + activePcId + '/provision', {
         method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
@@ -1464,9 +1463,9 @@ const DISTROS=[
   {id:'debian12',name:'Debian 12',ver:'Bookworm',
    logo:`<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z' fill='#A80030'/><path d='M13.5 7c-1.5 0-2.8.6-3.8 1.5.4-.1.9-.2 1.3-.2 2.2 0 3.5 1.3 3.5 1.3s-1-.4-2.5-.4c-1.8 0-3.5 1-3.5 3.3 0 1.6 1.3 2.5 2.5 2.5 2.5 0 3.5-2.5 3-4.5.5.7.8 1.6.8 2.5 0 2.8-2.2 5-5 5S5 15.8 5 13s2.2-5 5-5c.7 0 1.3.1 1.9.3C13.2 7.5 15 6.5 17 6.5c-1-.3-2.3-.5-3.5-.5h0z' fill='white'/></svg>`,
    desc:'Minimalista e extremamente estavel. Base do Ubuntu.',tags:['stable','apt'],color:'#A80030',install:'wsl --install -d Debian',wslName:'Debian'},
-  {id:'fedora43',name:'Fedora 43',ver:'Fedora WSL',
+  {id:'fedora39',name:'Fedora 39',ver:'Fedora WSL',
    logo:`<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><circle cx='12' cy='12' r='10' fill='#3C6EB4'/><path d='M12 6v6h6M12 12H6' stroke='white' stroke-width='2.5' stroke-linecap='round'/><path d='M12 6c3.3 0 6 2.7 6 6s-2.7 6-6 6' stroke='white' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>`,
-   desc:'Cutting-edge da Red Hat. Otimo para RHEL/OpenShift.',tags:['dnf','rhel'],color:'#3C6EB4',install:'wsl --install -d FedoraLinux-43',wslName:'FedoraLinux-43'},
+   desc:'Cutting-edge da Red Hat. Otimo para RHEL/OpenShift.',tags:['dnf','rhel'],color:'#3C6EB4',install:'wsl --install -d FedoraLinux-39',wslName:'FedoraLinux-39'},
   {id:'opensuse',name:'openSUSE Tumbleweed',ver:'Rolling Release',
    logo:`<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><circle cx='12' cy='12' r='10' fill='#73BA25'/><path d='M8 12c0-2.2 1.8-4 4-4s4 1.8 4 4-1.8 4-4 4' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/><circle cx='12' cy='12' r='1.5' fill='white'/></svg>`,
    desc:'Rolling release com Zypper. Estavel e moderno.',tags:['zypper','rolling'],color:'#73BA25',install:'wsl --install -d openSUSE-Tumbleweed',wslName:'openSUSE-Tumbleweed'},
@@ -1901,7 +1900,7 @@ async function runInstall(){
   function addLog(msg,level){const line=document.createElement('div');line.style.color=C[level]||C.info;line.textContent=(msg||'').replace(/\x1b\[[0-9;]*m/g,'');log.appendChild(line);log.scrollTop=log.scrollHeight;}
   try{
     // Envia o comando de provisionamento
-    const resp=await authFetch('/pcs/'+activePcId+'/provision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});
+    const resp=await authFetch('/pcs/'+activePcId+'/provision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
     if(!resp.ok){const err=await resp.json().catch(function(){return{};});throw new Error(err.msg||'HTTP '+resp.status);}
     addLog('Comando enviado ao agente. Aguardando execução...','info');
     lbl.textContent='Aguardando agente...';bar.style.width='10%';pct.textContent='10%';
@@ -1960,7 +1959,7 @@ function generateScript(){
   const rvt=document.getElementById('rv-tools');if(rvt)rvt.innerHTML=[...selected].map(id=>`<div class="ts-tag"><span class="dot"></span>${id}</div>`).join('');
   if(document.getElementById('script-fname'))document.getElementById('script-fname').textContent='config.json';
   window.scriptFilename='provision_'+user+'.sh';
-  const cfg={_generated:new Date().toISOString(),_tool:'WSL Manager v3.0.0',
+  const cfg={_generated:new Date().toISOString(),_tool:'WSL Manager v2.0.0',
     distro:{id:distro.id,name:distro.name,wslName:distro.wslName,installCmd:distro.install},
     wsl:{hostname,cpus:parseInt(cpu),memoryGB:parseInt(mem),swapGB:parseInt(swap),timezone:tz,
          systemd:togsState.systemd,automount:togsState.automount,interop:togsState.interop,
@@ -2303,9 +2302,10 @@ async function refreshDistros() {
   var el = document.getElementById('distro-list');
   if (!el) return;
   try {
-    var r = await authFetch('/pcs/' + activePcId);
-    var pc = await r.json();
-    var distros = JSON.parse(pc.distros || '[]');
+    var ctrl = new AbortController();
+    setTimeout(function(){ ctrl.abort(); }, 4000);
+    var r = await fetch(AGENT + '/distros', {signal: ctrl.signal});
+    var distros = await r.json();
     if (!distros.length) {
       el.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:12px 0;">Nenhuma distro instalada.</div>';
       return;

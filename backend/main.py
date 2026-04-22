@@ -102,7 +102,7 @@ async def list_pcs(_=Depends(verify_admin_token)):
                 ls = datetime.fromisoformat(last_seen)
                 if ls.tzinfo is None:
                     ls = ls.replace(tzinfo=timezone.utc)
-                online = (now - ls).total_seconds() < 15
+                online = (now - ls).total_seconds() < 30
             except Exception:
                 pass
         result.append({**pc, "online": online})
@@ -126,7 +126,18 @@ async def get_pc(pc_id: str, _=Depends(verify_admin_token)):
     pc = await db.get_pc(pc_id)
     if not pc:
         raise HTTPException(404, "PC não encontrado")
-    return pc
+    now = datetime.now(timezone.utc)
+    last_seen = pc.get("last_seen")
+    online = False
+    if last_seen:
+        try:
+            ls = datetime.fromisoformat(last_seen)
+            if ls.tzinfo is None:
+                ls = ls.replace(tzinfo=timezone.utc)
+            online = (now - ls).total_seconds() < 30
+        except Exception:
+            pass
+    return {**pc, "online": online}
 
 # =============================================================================
 # AGENT ENDPOINTS (autenticados com token do PC)
@@ -138,8 +149,8 @@ async def agent_heartbeat(req: PCHeartbeatRequest, payload=Depends(verify_token)
     pc_id = payload["pc_id"]
     await db.update_pc_heartbeat(
         pc_id=pc_id,
-        distros=req.distros,
-        metrics=req.metrics,
+        distros=[d.dict() for d in req.distros],
+        metrics=req.metrics.dict() if req.metrics else {},
         hostname=req.hostname,
         windows_version=req.windows_version,
     )

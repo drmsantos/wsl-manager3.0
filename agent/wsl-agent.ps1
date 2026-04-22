@@ -14,7 +14,7 @@
 # =============================================================================
 param(
     [string] $BackendURL  = "http://wsl-manager.drmsantos.local/api",
-    [string] $AgentToken  = "",           # Cole aqui o token JWT do dashboard
+    [string] $AgentToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwY19pZCI6IjFhYzU1ODQyLTg4YTctNGJhYi05NWE0LWMxMTljMzExYTc4MSIsInBjX25hbWUiOiJERVNLVE9QLU5EM0lVMTEiLCJpc19hZG1pbiI6ZmFsc2UsImV4cCI6MjA5MjE3MzI3MX0.AtOumWtHy8Lubd2DhjAh6Ly2vjLnX1ROvmb7te3RDi8",           # Cole aqui o token JWT do dashboard
     [int]    $HeartbeatSec = 5,
     [int]    $PollSec      = 3,
     [switch] $Install,
@@ -442,7 +442,7 @@ function Build-ProvisionScript {
         & $a "alias kex='kubectl exec -it'"
     }
     if ($tools -contains 'helm')   { & $a "alias h='helm'"; & $a "alias hls='helm list -A'" }
-    if ($tools -contains 'docker') { & $a "alias d='docker'"; & $a "alias dps='docker ps --format \"table {{.Names}}\t{{.Status}}\t{{.Ports}}\"'" }
+    if ($tools -contains 'docker') { & $a "alias d='docker'"; & $a "alias dps='docker ps --format \`"table {{.Names}}\t{{.Status}}\t{{.Ports}}\`"'" }
     if ($tools -contains 'sqlplus'){ & $a "alias sqldev='sqlplus /nolog'" }
     & $a "ALIASES"
     & $a "chown `$U: /home/`$U/.$($shell)rc 2>/dev/null||true"
