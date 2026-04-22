@@ -1209,7 +1209,7 @@ async function authFetch(url, opts) {
 
 // O AGENT aponta para o PC ativo via backend Rancher
 // Todas as chamadas antigas ao AGENT são redirecionadas através do backend
-const AGENT = 'http://localhost:8765';
+const AGENT = '';
 
 // Wrapper que envia comandos ao PC ativo via backend
 async function agentPost(endpoint, body) {
@@ -1248,8 +1248,8 @@ async function agentGet(endpoint) {
 // Shimming do fetch para redirecionar chamadas AGENT+'/...' para o backend
 const _origFetch = window.fetch;
 window.fetch = async function(url, opts) {
-  if (typeof url === 'string' && url.startsWith('http://localhost')) {
-    const path = url.replace(/^http:\/\/localhost:[0-9]+/, '');
+  if (typeof url === 'string' && (url.startsWith('http://localhost') || url === '' || !url.startsWith('http'))) {
+    const path = url.startsWith('http://localhost') ? url.replace(/^http:\/\/localhost:[0-9]+/, '') : url;
     if (path === '/status') {
       if (!activePcId) return new Response(JSON.stringify({ok:false}), {status:503,headers:{'Content-Type':'application/json'}});
       const r = await authFetch('/pcs/' + activePcId);
@@ -1914,7 +1914,7 @@ async function runInstall(){
         if(ev.type==='ping')return;
         if(ev.pct>=0){bar.style.width=ev.pct+'%';pct.textContent=ev.pct+'%';}
         if(ev.msg){lbl.textContent=(ev.msg||'').replace(/\x1b\[[0-9;]*m/g,'');addLog(ev.msg,ev.level||ev.type);}
-        if(ev.type==='done'){
+        if(ev.type==='done'){doneReceived=true;
           es.close();
           if(ev.ok){bar.style.width='100%';pct.textContent='100%';lbl.textContent='[OK] Concluido!';success.style.display='block';document.getElementById('success-cmd').textContent=ev.msg||'';ST.scriptsGenerated=(ST.scriptsGenerated||0)+1;saveState();renderDashboard();}
           else{bar.style.background='var(--danger)';lbl.textContent='[X] Falhou - veja o log';addLog('ERRO: '+ev.msg,'error');}
@@ -1922,9 +1922,20 @@ async function runInstall(){
         }
       }catch(ex){}
     };
+    var doneReceived=false;
     es.onerror=function(){
-      addLog('Comando enviado. Verifique o console do agente para acompanhar o progresso.','info');
-      es.close();btn.disabled=false;btn.textContent='>> Instalar Agora';
+      es.close();
+      btn.disabled=false;btn.textContent='>> Instalar Agora';
+      if(!doneReceived){
+        addLog('Conexão SSE encerrada. Verificando resultado...','info');
+        setTimeout(async function(){
+          try{
+            const r=await authFetch('/pcs/'+activePcId);
+            const pc=await r.json();
+            addLog('Provision enviado ao agente — verifique o console do agente para acompanhar.','info');
+          }catch(e){}
+        },2000);
+      }
     };
   }catch(e){addLog('Erro: '+e.message,'error');lbl.textContent='Falha';bar.style.background='var(--danger)';btn.disabled=false;btn.textContent='>> Instalar Agora';}
 }
@@ -2934,7 +2945,7 @@ function toggleDark() {
 // Time: OpenLabs - DevOps | Infra | WSL Manager v2.1.0 - widget v1.1.0
 // ─────────────────────────────────────────────────────────────────────────────
 (function() {
-  var POLL_MS = 3000, MAX_H = 30, BASE = 'http://localhost:8765';
+  var POLL_MS = 3000, MAX_H = 30, BASE = '';
   var pollTimer = null, minimized = false, dragState = null;
   var history = {};
 
@@ -3048,7 +3059,7 @@ function toggleDark() {
         var ping = document.getElementById('wm-ping');
         ping.textContent = String.fromCharCode(9679) + ' offline';
         ping.className = 'offline';
-        document.getElementById('wm-body').innerHTML = '<div class="wm-empty">Agente offline<br><span style="color:#484f58">localhost:8765</span></div>';
+        document.getElementById('wm-body').innerHTML = '<div class="wm-empty">Agente offline<br><span style="color:#484f58">sem conexão</span></div>';
       });
   };
 

@@ -316,7 +316,7 @@ function Build-ProvisionScript {
     param($cfg)
     $u      = $cfg.user.name
     $shell  = $cfg.user.shell
-    $sbin   = if ($shell -eq 'zsh') { '/usr/bin/zsh' } else { '/bin/bash' }
+    $sbin   = if ($shell -eq 'zsh') { '${ZSH_BIN:-/usr/bin/zsh}' } else { '/bin/bash' }
     $tools  = $cfg.tools
     $tz     = $cfg.wsl.timezone
     $hname  = $cfg.wsl.hostname
@@ -360,12 +360,18 @@ function Build-ProvisionScript {
     & $a "ok 'Timezone'"; & $a ""
 
     & $a "step 'Base packages'"
-    & $a "apt-get update -qq && export DEBIAN_FRONTEND=noninteractive"
-    & $a "apt-get install -y -qq curl wget git unzip zip tar ca-certificates gnupg lsb-release apt-transport-https build-essential sudo vim nano openssl"
     & $a 'DISTRO_ID=$(. /etc/os-release && echo $ID)'
+    & $a 'PKG_MGR="apt-get"; command -v dnf &>/dev/null && PKG_MGR="dnf"'
+    & $a 'if [[ "$PKG_MGR" == "apt-get" ]]; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl wget git unzip zip tar ca-certificates gnupg lsb-release apt-transport-https build-essential sudo vim nano openssl; fi'
+    & $a 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y curl wget git unzip zip tar ca-certificates sudo vim nano openssl which findutils; fi'
     & $a "ok 'Base packages'"; & $a ""
 
-    if ($shell -eq 'zsh' -or $tools -contains 'ohmyzsh') { & $a "apt-get install -y -qq zsh" }
+    if ($shell -eq 'zsh' -or $tools -contains 'ohmyzsh') {
+        & $a 'if [[ "$PKG_MGR" == "apt-get" ]]; then apt-get install -y -qq zsh; fi'
+        & $a 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y zsh; fi'
+        & $a 'ZSH_BIN=$(command -v zsh 2>/dev/null || echo /usr/bin/zsh)'
+        & $a 'grep -qxF "$ZSH_BIN" /etc/shells 2>/dev/null || echo "$ZSH_BIN" >> /etc/shells'
+    }
 
     & $a ('step "User: $U"')
     & $a ('id "$U" &>/dev/null && warn "Already exists" || { useradd -m -s "' + $sbin + '" "$U"; echo "$U:$(openssl rand -base64 16)" | chpasswd; ok "Created"; }')
@@ -442,13 +448,13 @@ function Build-ProvisionScript {
         & $a "alias kex='kubectl exec -it'"
     }
     if ($tools -contains 'helm')   { & $a "alias h='helm'"; & $a "alias hls='helm list -A'" }
-    if ($tools -contains 'docker') { & $a "alias d='docker'"; & $a "alias dps='docker ps --format \`"table {{.Names}}\t{{.Status}}\t{{.Ports}}\`"'" }
+    if ($tools -contains 'docker') { & $a "alias d='docker'"; & $a "alias dps='docker ps --format \`"table {{.Names}}	{{.Status}}	{{.Ports}}\`"'" }
     if ($tools -contains 'sqlplus'){ & $a "alias sqldev='sqlplus /nolog'" }
     & $a "ALIASES"
     & $a "chown `$U: /home/`$U/.$($shell)rc 2>/dev/null||true"
     & $a "ok 'Aliases'"; & $a ""
 
-    & $a "echo -e \"\n\033[0;32m✓ Provisionamento concluído!\033[0m\""
+    & $a 'echo -e "\n\033[0;32m✓ Provisionamento concluido!\033[0m"'
     & $a "echo -e \"  Acesse: wsl -d $($cfg.distro.wslName) -u `$U\""
 
     return $L -join "`n"
