@@ -4,7 +4,7 @@
 # Autor: Diego Regis M. F. dos Santos
 # Email: diego-f-santos@openlabs.com.br
 # Time:  OpenLabs - DevOps | Infra
-# Versão: 3.0.0
+# Versão: 3.1.0
 #
 # CONFIGURAÇÃO:
 #   1. Defina $AgentToken com o token JWT gerado no dashboard
@@ -23,7 +23,7 @@ param(
 )
 
 $ErrorActionPreference = "SilentlyContinue"
-$AgentVersion = "3.0.0"
+$AgentVersion = "3.1.0"
 $TaskName     = "WSLManagerAgent"
 $LogFile      = "$env:TEMP\wsl-agent-v3.log"
 
@@ -102,28 +102,26 @@ function Api-Get {
 function Get-DistroList {
     $raw = wsl --list --verbose 2>$null
     if (-not $raw) { return @() }
-    $names = $raw | Select-Object -Skip 1 | ForEach-Object {
-        ($_ -replace '\x00','').Trim() -replace '^[*\s]+','' -replace '\s+.*$',''
-    } | Where-Object { $_ -ne '' -and $_ -ne 'NAME' }
-
-    $runningRaw = wsl --list --running --quiet 2>$null
-    $running = @()
-    if ($runningRaw) {
-        $running = $runningRaw | ForEach-Object { ($_ -replace '\x00','').Trim() } | Where-Object { $_ -ne '' }
+    $result = @()
+    $raw | Select-Object -Skip 1 | ForEach-Object {
+        $line = ($_ -replace '\x00','').Trim()
+        if ($line -eq '' -or $line -match '^NAME') { return }
+        $line = $line -replace '^\*\s*', ''
+        $parts = $line -split '\s+' | Where-Object { $_ -ne '' }
+        if ($parts.Count -ge 2) {
+            $n = $parts[0]
+            $state = $parts[1]
+            $result += @{ name = $n; running = ($state -eq 'Running') }
+        }
     }
-
-    return $names | ForEach-Object {
-        $n = $_
-        @{ name = $n; running = ($running -contains $n) }
-    }
+    return $result
 }
 
-# ── Coleta métricas Windows (CPU, RAM) ───────────────────────────────────────
+# ── Coleta métricas Windows ───────────────────────────────────────────────────
 function Get-WinMetrics {
     try {
         $cpu = [math]::Round((Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average, 0)
     } catch { $cpu = 0 }
-
     try {
         $os = Get-CimInstance Win32_OperatingSystem
         $ramTotal = [math]::Round($os.TotalVisibleMemorySize / 1024, 0)
@@ -131,14 +129,12 @@ function Get-WinMetrics {
         $ramUsed  = $ramTotal - $ramFree
         $ramPct   = if ($ramTotal -gt 0) { [math]::Round($ramUsed * 100 / $ramTotal, 0) } else { 0 }
     } catch { $ramTotal = 0; $ramUsed = 0; $ramPct = 0 }
-
     try {
         $disk = Get-PSDrive C
         $diskTotal = [math]::Round(($disk.Used + $disk.Free) / 1GB, 1)
         $diskUsed  = [math]::Round($disk.Used / 1GB, 1)
         $diskPct   = if ($diskTotal -gt 0) { [math]::Round($diskUsed * 100 / $diskTotal, 0) } else { 0 }
     } catch { $diskTotal = 0; $diskUsed = 0; $diskPct = 0 }
-
     return @{
         cpu_pct       = [int]$cpu
         ram_used_mb   = [int]$ramUsed
@@ -151,30 +147,21 @@ function Get-WinMetrics {
 }
 
 function Get-WinVersion {
-    try {
-        $v = (Get-CimInstance Win32_OperatingSystem).Caption
-        return $v -replace "Microsoft ",""
-    } catch { return "Windows" }
+    try { return (Get-CimInstance Win32_OperatingSystem).Caption -replace "Microsoft ","" }
+    catch { return "Windows" }
 }
 
-# ── SSE helper: posta evento de progresso ao backend ─────────────────────────
+# ── SSE helper ────────────────────────────────────────────────────────────────
 function Post-Result {
     param([string]$cmdId, [string]$type, [string]$msg, [int]$pct=-1, [string]$level='info')
     $body = @{
         command_id = $cmdId
-        result = @{
-            type  = $type
-            msg   = $msg
-            pct   = $pct
-            level = $level
-            ts    = (Get-Date -f 'HH:mm:ss')
-        }
+        result = @{ type=$type; msg=$msg; pct=$pct; level=$level; ts=(Get-Date -f 'HH:mm:ss') }
     }
     try { Api-Post "/agent/result" $body | Out-Null } catch {}
 }
 
-# ── Executores de comandos ────────────────────────────────────────────────────
-
+# ── Run-Provision ─────────────────────────────────────────────────────────────
 function Run-Provision {
     param($cmd)
     $cmdId  = $cmd.command_id
@@ -186,16 +173,14 @@ function Run-Provision {
     Post-Result $cmdId 'step' "Iniciando provisionamento: $distro / $user" 5
 
     try {
-        # .wslconfig
         Post-Result $cmdId 'step' "Escrevendo .wslconfig..." 10
         $wslCfg = "[wsl2]`nmemory=$($cfg.wsl.memoryGB)GB`nprocessors=$($cfg.wsl.cpus)`nswap=$($cfg.wsl.swapGB)GB`nlocalhostForwarding=true"
         Set-Content "$env:USERPROFILE\.wslconfig" $wslCfg -Encoding UTF8
         Post-Result $cmdId 'ok' ".wslconfig escrito" 12
 
-        # Verificar se distro já existe
         $installed = @(Get-DistroList | ForEach-Object { $_.name })
         if ($installed -contains $distro) {
-            Post-Result $cmdId 'warn' "$distro já instalada — pulando instalação" 15
+            Post-Result $cmdId 'warn' "$distro ja instalada - pulando instalacao" 15
         } else {
             Post-Result $cmdId 'step' "Instalando $distro via wsl --install..." 15
             $proc = Start-Process "wsl.exe" -ArgumentList "--install -d $distro --no-launch" -Wait -PassThru -NoNewWindow
@@ -206,7 +191,6 @@ function Run-Provision {
             Post-Result $cmdId 'ok' "$distro instalada" 20
         }
 
-        # Gerar provision.sh
         Post-Result $cmdId 'step' "Gerando provision.sh..." 22
         $provScript = Build-ProvisionScript $cfg
         $tmpWin = "$env:TEMP\provision_$user.sh"
@@ -218,10 +202,9 @@ function Run-Provision {
         Remove-Item $tmpWin -ErrorAction SilentlyContinue
         Post-Result $cmdId 'ok' "provision.sh injetado" 25
 
-        # Executar
         Post-Result $cmdId 'step' "Executando provision.sh (5-15 min)..." 28
         $psi = [System.Diagnostics.ProcessStartInfo]::new("wsl.exe")
-        $psi.Arguments = "-d $distro -- bash -c `"sudo bash $wslPath`""
+        $psi.Arguments = "-d $distro -- bash -c `"sudo bash $wslPath 2>&1`""
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError  = $true
         $psi.UseShellExecute        = $false
@@ -229,50 +212,70 @@ function Run-Provision {
         $proc2 = [System.Diagnostics.Process]::Start($psi)
 
         $pctMap = @{
-            'Timezone'=30;'Base packages'=35;'User'=38;'Sudo'=40;
-            'wsl.conf'=42;'Oh My Zsh'=45;'zsh plugins'=48;'kubectl'=52;
-            'OpenShift'=55;'Helm'=57;'k9s'=59;'Terraform'=62;
-            'Docker'=65;'SQLPlus'=68;'Python'=72;'Node'=75;
-            'fzf'=77;'jq'=78;'htop'=80;'Aliases'=88;'Git'=91
+            'wsl.conf'=30;'Timezone'=33;'Base packages'=36;'zsh'=38;
+            'User'=40;'Sudo'=42;'kubectl'=45;'oc'=47;'helm'=49;
+            'k9s'=51;'kubectx'=52;'stern'=53;'argocd'=54;'tkn'=55;
+            'kustomize'=56;'Terraform'=58;'Ansible'=60;'docker'=62;
+            'podman'=63;'skopeo'=64;'buildah'=65;'awscli'=66;
+            'azcli'=67;'gcloud'=68;'pulumi'=69;'vector'=70;
+            'promtool'=71;'SQLPlus'=72;'mysql'=73;'psql'=74;
+            'mongosh'=75;'redis'=76;'python3'=77;'nodejs'=78;
+            'java'=79;'go'=80;'rust'=81;'ohmyzsh'=83;
+            'zsh plugins'=84;'fzf'=85;'jq'=86;'bat'=87;
+            'eza'=87;'ripgrep'=88;'tmux'=88;'htop'=89;
+            'zoxide'=89;'starship'=90;'nmap'=90;'sshpass'=91;
+            'Aliases'=93;'Git'=95
         }
         $curPct = 28
 
-        $readTask = $proc2.StandardOutput.ReadToEndAsync()
-        $proc2.WaitForExit()
-        $allOutput = $readTask.GetAwaiter().GetResult()
-        foreach ($line in ($allOutput -split "`n")) {
-            $line = ($line -replace "\x1B\[[0-9;]*[mK]","" -replace "\x1B\[\??[0-9;]*[hlc]","" -replace "[^\x20-\x7E\x0A\x0D]","").Trim()
-            if (-not $line) { continue }
-            foreach ($kv in $pctMap.GetEnumerator()) {
-                if ($line -match $kv.Key) { $curPct = [Math]::Max($curPct, $kv.Value); break }
+        $bufSize = 4096
+        $buf = [char[]]::new($bufSize)
+        $lastLine = ''
+        $timeoutMs = 1800000  # 30 min
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
+        while (-not $proc2.HasExited -or -not $proc2.StandardOutput.EndOfStream) {
+            if ($sw.ElapsedMilliseconds -gt $timeoutMs) { break }
+            if ($proc2.HasExited -and $proc2.StandardOutput.Peek() -eq -1) { break }
+            $n = $proc2.StandardOutput.Read($buf, 0, $bufSize)
+            if ($n -le 0) {
+                if ($proc2.HasExited) { break }
+                Start-Sleep -Milliseconds 100
+                continue
             }
-            $lvl = 'info'
-            if ($line -match '\[OK\]')   { $lvl = 'ok' }
-            if ($line -match '\[WARN\]') { $lvl = 'warn' }
-            if ($line -match '\[ERR\]')  { $lvl = 'error' }
-            if ($line -match '^>')       { $lvl = 'step' }
-            $clean = $line -replace '\x1b\[[0-9;]*m',''
-            Post-Result $cmdId $lvl $clean $curPct
+            $chunk = [string]::new($buf, 0, $n)
+            $combined = $lastLine + $chunk
+            $lines = $combined -split "`n"
+            $lastLine = $lines[-1]
+            foreach ($line in ($lines | Select-Object -SkipLast 1)) {
+                $line = ($line -replace '\x1B\[[0-9;]*[mK]','' -replace '\x1B\[\??[0-9;]*[hlc]','' -replace '[^\x20-\x7E]','').Trim()
+                if (-not $line) { continue }
+                foreach ($kv in $pctMap.GetEnumerator()) {
+                    if ($line -match $kv.Key) { $curPct = [Math]::Max($curPct, $kv.Value); break }
+                }
+                $lvl = 'info'
+                if ($line -match '\[OK\]')   { $lvl = 'ok' }
+                if ($line -match '\[WARN\]') { $lvl = 'warn' }
+                if ($line -match '\[ERR\]')  { $lvl = 'error' }
+                if ($line -match '^>')       { $lvl = 'step' }
+                Post-Result $cmdId $lvl $line $curPct
+            }
         }
+        $proc2.WaitForExit(60000) | Out-Null
 
         if ($proc2.ExitCode -ne 0) {
             $stderr = $proc2.StandardError.ReadToEnd() -replace '\x1b\[[0-9;]*m',''
             Post-Result $cmdId 'error' "Exit code $($proc2.ExitCode): $stderr" 98 'error'
-            Post-Result $cmdId 'done'  "Provision failed" 98
-            Post-Result $cmdId 'done'  'done' 98
-            # Sinaliza done=false
             $body = @{ command_id=$cmdId; result=@{ type='done'; ok=$false; msg='Provision failed'; pct=98 } }
             Api-Post "/agent/result" $body | Out-Null
             return
         }
 
-        # Restart WSL
         Post-Result $cmdId 'step' "Reiniciando WSL para aplicar wsl.conf..." 97
         wsl --terminate $distro 2>$null
         Start-Sleep -Seconds 2
         Post-Result $cmdId 'ok' "WSL reiniciado" 99
 
-        # Done
         $doneBody = @{ command_id=$cmdId; result=@{ type='done'; ok=$true; msg="wsl -d $distro -u $user"; pct=100 } }
         Api-Post "/agent/result" $doneBody | Out-Null
         Log "Provision complete: $distro / $user"
@@ -312,12 +315,11 @@ function Run-RemoveDistro {
     }
 }
 
-# ── Build-ProvisionScript (igual ao agente v2, adaptado) ─────────────────────
+# ── Build-ProvisionScript ─────────────────────────────────────────────────────
 function Build-ProvisionScript {
     param($cfg)
     $u      = $cfg.user.name
     $shell  = $cfg.user.shell
-    $sbin   = if ($shell -eq 'zsh') { '${ZSH_BIN:-/usr/bin/zsh}' } else { '/bin/bash' }
     $tools  = $cfg.tools
     $tz     = $cfg.wsl.timezone
     $hname  = $cfg.wsl.hostname
@@ -360,6 +362,7 @@ function Build-ProvisionScript {
     & $a ("timedatectl set-timezone '" + $tz + "' 2>/dev/null || ln -sf /usr/share/zoneinfo/" + $tz + " /etc/localtime")
     & $a "ok 'Timezone'"; & $a ""
 
+    # Detecção do package manager
     & $a "step 'Base packages'"
     & $a 'DISTRO_ID=$(. /etc/os-release && echo $ID)'
     & $a 'PKG_MGR="apt-get"; command -v dnf &>/dev/null && PKG_MGR="dnf"'
@@ -374,41 +377,215 @@ function Build-ProvisionScript {
         & $a 'grep -qxF "$ZSH_BIN" /etc/shells 2>/dev/null || echo "$ZSH_BIN" >> /etc/shells'
     }
 
+    $sbin = if ($shell -eq 'zsh') { '${ZSH_BIN:-/usr/bin/zsh}' } else { '/bin/bash' }
+
     & $a ('step "User: $U"')
     & $a ('id "$U" &>/dev/null && warn "Already exists" || { useradd -m -s "' + $sbin + '" "$U"; echo "$U:$(openssl rand -base64 16)" | chpasswd; ok "Created"; }')
     & $a ""
 
     if ($sudo) {
-        & $a ('usermod -aG sudo "$U"')
+        & $a 'usermod -aG sudo "$U" 2>/dev/null; usermod -aG wheel "$U" 2>/dev/null'
         & $a ('echo "$U ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$U && chmod 440 /etc/sudoers.d/$U')
         & $a "ok 'Sudo NOPASSWD'"; & $a ""
     }
 
     $CMDS = @{
-        ohmyzsh     = 'rm -rf ~/.oh-my-zsh 2>/dev/null; su - "$U" -c ''sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended''' + "`n" + 'su - "$U" -c ''git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/themes/powerlevel10k 2>/dev/null||true''' + "`n" + 'su - "$U" -c ''sed -i "s/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/" ~/.zshrc'''
-        zsh_plugins = 'su - "$U" -c ''git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions 2>/dev/null||true''' + "`n" + 'su - "$U" -c ''git clone https://github.com/zsh-users/zsh-syntax-highlighting ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting 2>/dev/null||true''' + "`n" + 'su - "$U" -c ''sed -i "s/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting kubectl docker)/" ~/.zshrc'''
-        kubectl     = 'rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg; curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg' + "`n" + "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' > /etc/apt/sources.list.d/kubernetes.list" + "`n" + 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq kubectl'
-        oc          = 'OC=$(curl -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/release.txt | grep ''Version:'' | awk ''{print $2}'')' + "`n" + 'curl -fsSL "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/$OC/openshift-client-linux.tar.gz" | tar -xz -C /usr/local/bin oc'
-        helm        = 'curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash'
-        k9s         = 'K=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" + 'curl -fsSL "https://github.com/derailed/k9s/releases/download/$K/k9s_Linux_amd64.tar.gz" | tar -xz -C /usr/local/bin k9s'
-        kubectx     = 'K=$(curl -s https://api.github.com/repos/ahmetb/kubectx/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" + 'curl -fsSL "https://github.com/ahmetb/kubectx/releases/download/$K/kubectx_${K}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin kubectx 2>/dev/null||true' + "`n" + 'curl -fsSL "https://github.com/ahmetb/kubectx/releases/download/$K/kubens_${K}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin kubens 2>/dev/null||true'
-        argocd      = 'K=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" + 'curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/$K/argocd-linux-amd64" -o /usr/local/bin/argocd && chmod +x /usr/local/bin/argocd'
-        terraform   = 'wget -qO- https://apt.releases.hashicorp.com/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/hashicorp.gpg' + "`n" + 'echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list' + "`n" + 'apt-get update -qq && apt-get install -y -qq terraform'
-        ansible     = 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ansible'
-        docker      = 'DISTRO_ID=$(. /etc/os-release && echo $ID)' + "`n" + 'rm -f /etc/apt/keyrings/docker.gpg; curl -fsSL "https://download.docker.com/linux/${DISTRO_ID}/gpg" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg' + "`n" + 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DISTRO_ID} $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list' + "`n" + 'DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq docker-ce-cli docker-compose-plugin' + "`n" + 'getent group docker >/dev/null 2>&1 || groupadd docker' + "`n" + 'usermod -aG docker "$U"'
-        awscli      = "curl -fsSL 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o /tmp/awscliv2.zip" + "`n" + 'unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip'
-        azcli       = 'curl -sL https://aka.ms/InstallAzureCLIDeb | bash'
-        python3     = 'apt-get install -y -qq python3 python3-venv python3-pip python3-dev'
-        nodejs      = 'su - "$U" -c ''curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash''' + "`n" + 'su - "$U" -c ''source ~/.nvm/nvm.sh && nvm install 20 && nvm alias default 20'''
-        go          = 'curl -fsSL https://go.dev/dl/go1.22.3.linux-amd64.tar.gz | tar -xz -C /usr/local' + "`n" + ('printf ''export GOPATH=$HOME/go\nexport PATH=$PATH:/usr/local/go/bin:$GOPATH/bin\n'' >> /home/$U/.' + $shell + 'rc')
-        java        = 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openjdk-21-jdk maven'
+        # ── K8s ──────────────────────────────────────────────────────────────
+        kubectl     = 'if [[ "$PKG_MGR" == "dnf" ]]; then' + "`n" +
+                      '  cat > /etc/yum.repos.d/kubernetes.repo << EOF' + "`n" +
+                      '[kubernetes]' + "`n" + 'name=Kubernetes' + "`n" +
+                      'baseurl=https://pkgs.k8s.io/core:/stable:/v1.32/rpm/' + "`n" +
+                      'enabled=1' + "`n" + 'gpgcheck=1' + "`n" +
+                      'gpgkey=https://pkgs.k8s.io/core:/stable:/v1.32/rpm/repodata/repomd.xml.key' + "`n" +
+                      'EOF' + "`n" + '  dnf install -y kubectl' + "`n" + 'else' + "`n" +
+                      '  rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg' + "`n" +
+                      "  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg" + "`n" +
+                      "  echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' > /etc/apt/sources.list.d/kubernetes.list" + "`n" +
+                      '  DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq kubectl' + "`n" + 'fi'
+
+        oc          = 'OC=$(curl -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/release.txt | grep ''Version:'' | awk ''{print $2}'')' + "`n" +
+                      'curl -fsSL "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/$OC/openshift-client-linux.tar.gz" | tar -xz -C /usr/local/bin oc'
+
+        helm        = 'curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | VERIFY_CHECKSUM=false bash'
+
+        k9s         = 'K=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/derailed/k9s/releases/download/$K/k9s_Linux_amd64.tar.gz" | tar -xz -C /usr/local/bin k9s'
+
+        kubectx     = 'K=$(curl -s https://api.github.com/repos/ahmetb/kubectx/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/ahmetb/kubectx/releases/download/$K/kubectx_${K}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin kubectx 2>/dev/null||true' + "`n" +
+                      'curl -fsSL "https://github.com/ahmetb/kubectx/releases/download/$K/kubens_${K}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin kubens 2>/dev/null||true'
+
+        stern       = 'K=$(curl -s https://api.github.com/repos/stern/stern/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/stern/stern/releases/download/$K/stern_${K#v}_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin stern 2>/dev/null||' + "`n" +
+                      'curl -fsSL "https://github.com/stern/stern/releases/download/$K/stern_linux_amd64" -o /usr/local/bin/stern && chmod +x /usr/local/bin/stern 2>/dev/null||true'
+
+        argocd      = 'K=$(curl -s https://api.github.com/repos/argoproj/argo-cd/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/$K/argocd-linux-amd64" -o /usr/local/bin/argocd && chmod +x /usr/local/bin/argocd'
+
+        tekton      = 'K=$(curl -s https://api.github.com/repos/tektoncd/cli/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/tektoncd/cli/releases/download/$K/tkn_${K#v}_Linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin tkn 2>/dev/null||true'
+
+        kustomize   = 'K=$(curl -s https://api.github.com/repos/kubernetes-sigs/kustomize/releases/latest | grep tag_name | grep kustomize | cut -d''"'' -f4 | head -1)' + "`n" +
+                      'VER=${K#kustomize/}' + "`n" +
+                      'curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F${VER}/kustomize_${VER}_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin kustomize 2>/dev/null||true'
+
+        # ── Cloud & IaC ───────────────────────────────────────────────────────
+        terraform   = 'if [[ "$PKG_MGR" == "dnf" ]]; then' + "`n" +
+                      '  dnf install -y dnf-plugins-core 2>/dev/null||true' + "`n" +
+                      '  dnf config-manager addrepo --from-repofile=https://rpm.releases.hashicorp.com/fedora/hashicorp.repo 2>/dev/null || dnf config-manager --add-repo https://rpm.releases.hashicorp.com/fedora/hashicorp.repo 2>/dev/null||true' + "`n" +
+                      '  dnf install -y terraform' + "`n" + 'else' + "`n" +
+                      '  wget -qO- https://apt.releases.hashicorp.com/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/hashicorp.gpg' + "`n" +
+                      '  echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list' + "`n" +
+                      '  apt-get update -qq && apt-get install -y -qq terraform' + "`n" + 'fi'
+
+        ansible     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y ansible; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ansible; fi'
+
+        awscli      = "curl -fsSL 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o /tmp/awscliv2.zip" + "`n" +
+                      'unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install && rm -rf /tmp/aws /tmp/awscliv2.zip'
+
+        azcli       = 'if [[ "$PKG_MGR" == "dnf" ]]; then rpm --import https://packages.microsoft.com/keys/microsoft.asc; dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm 2>/dev/null||true; dnf install -y azure-cli; else curl -sL https://aka.ms/InstallAzureCLIDeb | bash; fi'
+
+        gcloud      = 'curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz | tar -xz -C /opt' + "`n" +
+                      '/opt/google-cloud-sdk/install.sh --quiet --no-report-usage 2>/dev/null||true' + "`n" +
+                      ('printf ''export PATH=$PATH:/opt/google-cloud-sdk/bin\n'' >> /home/$U/.' + $shell + 'rc')
+
+        ocicli      = 'bash -c "$(curl -fsSL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults 2>/dev/null||true'
+
+        pulumi      = 'curl -fsSL https://get.pulumi.com | sh' + "`n" +
+                      ('printf ''export PATH=$PATH:$HOME/.pulumi/bin\n'' >> /home/$U/.' + $shell + 'rc')
+
+        # ── Observabilidade ────────────────────────────────────────────────────
+        vector      = 'if [[ "$PKG_MGR" == "dnf" ]]; then' + "`n" +
+                      '  cat > /etc/yum.repos.d/vector.repo << EOF' + "`n" +
+                      '[vector]' + "`n" + 'name=Vector' + "`n" +
+                      'baseurl=https://yum.vector.dev/stable/vector-0/x86_64/' + "`n" +
+                      'enabled=1' + "`n" + 'gpgcheck=1' + "`n" +
+                      'gpgkey=https://yum.vector.dev/stable/vector-0/x86_64/repodata/repomd.xml.key' + "`n" +
+                      'EOF' + "`n" + '  dnf install -y vector' + "`n" + 'else' + "`n" +
+                      '  curl -fsSL https://apt.vector.dev/gpg.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/vector.gpg' + "`n" +
+                      '  echo "deb [signed-by=/usr/share/keyrings/vector.gpg] https://apt.vector.dev stable vector-0" > /etc/apt/sources.list.d/vector.list' + "`n" +
+                      '  apt-get update -qq && apt-get install -y -qq vector' + "`n" + 'fi'
+
+        promtool    = 'K=$(curl -s https://api.github.com/repos/prometheus/prometheus/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/prometheus/prometheus/releases/download/$K/prometheus-${K#v}.linux-amd64.tar.gz" | tar -xz -C /tmp' + "`n" +
+                      'mv /tmp/prometheus-*/promtool /usr/local/bin/ && rm -rf /tmp/prometheus-*'
+
+        logcli      = 'K=$(curl -s https://api.github.com/repos/grafana/loki/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/grafana/loki/releases/download/$K/logcli-linux-amd64.zip" -o /tmp/logcli.zip' + "`n" +
+                      'unzip -q /tmp/logcli.zip -d /usr/local/bin && chmod +x /usr/local/bin/logcli-linux-amd64' + "`n" +
+                      'mv /usr/local/bin/logcli-linux-amd64 /usr/local/bin/logcli 2>/dev/null||true && rm -f /tmp/logcli.zip'
+
+        opensearch_cli = 'K=$(curl -s https://api.github.com/repos/opensearch-project/opensearch-cli/releases/latest | grep tag_name | cut -d''"'' -f4 | head -1)' + "`n" +
+                         'curl -fsSL "https://github.com/opensearch-project/opensearch-cli/releases/download/$K/opensearch-cli-${K#v}-linux-x64.tar.gz" | tar -xz -C /tmp 2>/dev/null||true' + "`n" +
+                         'find /tmp -name "opensearch-cli" -exec mv {} /usr/local/bin/opensearch-cli \; 2>/dev/null||true && chmod +x /usr/local/bin/opensearch-cli 2>/dev/null||true'
+
+        # ── Containers & CI/CD ─────────────────────────────────────────────────
+        docker      = 'if [[ "$PKG_MGR" == "dnf" ]]; then' + "`n" +
+                      '  dnf install -y dnf-plugins-core 2>/dev/null||true' + "`n" +
+                      '  dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo 2>/dev/null || dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo 2>/dev/null||true' + "`n" +
+                      '  dnf install -y docker-ce-cli docker-compose-plugin' + "`n" + 'else' + "`n" +
+                      '  DISTRO_ID=$(. /etc/os-release && echo $ID)' + "`n" +
+                      '  rm -f /etc/apt/keyrings/docker.gpg' + "`n" +
+                      '  curl -fsSL "https://download.docker.com/linux/${DISTRO_ID}/gpg" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg' + "`n" +
+                      '  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${DISTRO_ID} $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list' + "`n" +
+                      '  DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y -qq docker-ce-cli docker-compose-plugin' + "`n" + 'fi' + "`n" +
+                      'getent group docker >/dev/null 2>&1 || groupadd docker' + "`n" +
+                      'usermod -aG docker "$U"'
+
+        podman      = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y podman; else' + "`n" +
+                      '  if command -v apt-get &>/dev/null; then' + "`n" +
+                      '    apt-get install -y -qq podman 2>/dev/null || (. /etc/os-release && echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_${VERSION_ID}/ /" > /etc/apt/sources.list.d/podman.list && curl -fsSL "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_${VERSION_ID}/Release.key" | gpg --batch --yes --dearmor -o /etc/apt/trusted.gpg.d/podman.gpg && apt-get update -qq && apt-get install -y -qq podman)' + "`n" +
+                      '  fi' + "`n" + 'fi'
+
+        skopeo      = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y skopeo; else apt-get install -y -qq skopeo 2>/dev/null||true; fi'
+
+        buildah     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y buildah; else apt-get install -y -qq buildah 2>/dev/null||true; fi'
+
+        # ── Banco de Dados ────────────────────────────────────────────────────
+        sqlplus     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y libaio 2>/dev/null||true; else apt-get install -y -qq libaio1t64 2>/dev/null || apt-get install -y -qq libaio1 2>/dev/null; ln -sf /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1 2>/dev/null||true; fi' + "`n" +
+                      "IC='https://download.oracle.com/otn_software/linux/instantclient/2112000'" + "`n" +
+                      'curl -fsSL "$IC/instantclient-basic-linux.x64-21.12.0.0.0dbru.zip" -o /tmp/ic-basic.zip' + "`n" +
+                      'curl -fsSL "$IC/instantclient-sqlplus-linux.x64-21.12.0.0.0dbru.zip" -o /tmp/ic-sql.zip' + "`n" +
+                      'mkdir -p /usr/lib/oracle/21/client64/{bin,lib}' + "`n" +
+                      'unzip -q /tmp/ic-basic.zip -d /tmp/ic && mv /tmp/ic/instantclient_21_12/*.so* /usr/lib/oracle/21/client64/lib/' + "`n" +
+                      'unzip -q /tmp/ic-sql.zip -d /tmp/ic && mv /tmp/ic/instantclient_21_12/sqlplus /usr/lib/oracle/21/client64/bin/' + "`n" +
+                      'rm -rf /tmp/ic /tmp/ic-*.zip' + "`n" +
+                      'echo /usr/lib/oracle/21/client64/lib > /etc/ld.so.conf.d/oracle21.conf && ldconfig' + "`n" +
+                      'ln -sf /usr/lib/oracle/21/client64/bin/sqlplus /usr/local/bin/sqlplus' + "`n" +
+                      ('printf ''export ORACLE_HOME=/usr/lib/oracle/21/client64\nexport LD_LIBRARY_PATH=$ORACLE_HOME/lib:$LD_LIBRARY_PATH\nexport PATH=$ORACLE_HOME/bin:$PATH\nexport NLS_LANG=AMERICAN_AMERICA.AL32UTF8\n'' >> /home/$U/.' + $shell + 'rc')
+
+        mysql       = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y mysql; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client; fi'
+
+        psql        = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y postgresql; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client; fi'
+
+        mongosh     = 'K=$(curl -s https://api.github.com/repos/mongodb-js/mongosh/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/mongodb-js/mongosh/releases/download/$K/mongosh-${K#v}-linux-x64.tgz" | tar -xz -C /tmp 2>/dev/null||true' + "`n" +
+                      'find /tmp -name "mongosh" -type f -exec mv {} /usr/local/bin/mongosh \; 2>/dev/null||true && chmod +x /usr/local/bin/mongosh 2>/dev/null||true'
+
+        redis_cli   = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y redis; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq redis-tools; fi'
+
+        # ── Dev & Linguagens ──────────────────────────────────────────────────
+        python3     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y python3 python3-virtualenv python3-pip python3-devel; else apt-get install -y -qq python3 python3-venv python3-pip python3-dev; fi'
+
+        nodejs      = 'su - "$U" -c ''curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash''' + "`n" +
+                      'su - "$U" -c ''source ~/.nvm/nvm.sh && nvm install 20 && nvm alias default 20'''
+
+        go          = 'curl -fsSL https://go.dev/dl/go1.22.3.linux-amd64.tar.gz | tar -xz -C /usr/local' + "`n" +
+                      ('printf ''export GOPATH=$HOME/go\nexport PATH=$PATH:/usr/local/go/bin:$GOPATH/bin\n'' >> /home/$U/.' + $shell + 'rc')
+
+        java        = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y java-21-openjdk-devel maven; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openjdk-21-jdk maven; fi'
+
+        rust        = 'su - "$U" -c ''curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y''' + "`n" +
+                      ('printf ''export PATH=$HOME/.cargo/bin:$PATH\n'' >> /home/$U/.' + $shell + 'rc')
+
+        # ── Shell & Produtividade ──────────────────────────────────────────────
+        ohmyzsh     = 'rm -rf ~/.oh-my-zsh 2>/dev/null; su - "$U" -c ''sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended''' + "`n" +
+                      'su - "$U" -c ''git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/themes/powerlevel10k 2>/dev/null||true''' + "`n" +
+                      'su - "$U" -c ''sed -i "s/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/" ~/.zshrc'''
+
+        zsh_plugins = 'su - "$U" -c ''git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions 2>/dev/null||true''' + "`n" +
+                      'su - "$U" -c ''git clone https://github.com/zsh-users/zsh-syntax-highlighting ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting 2>/dev/null||true''' + "`n" +
+                      'su - "$U" -c ''sed -i "s/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting kubectl docker)/" ~/.zshrc'''
+
         fzf         = 'su - "$U" -c ''git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf && ~/.fzf/install --all'''
-        jq          = 'apt-get install -y -qq jq' + "`n" + 'YQ=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" + 'curl -fsSL "https://github.com/mikefarah/yq/releases/download/$YQ/yq_linux_amd64" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq'
-        tmux        = 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux'
-        htop        = 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq htop btop'
-        psql        = 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client'
-        mysql       = 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mysql-client'
-        sqlplus     = "apt-get install -y -qq libaio1t64 2>/dev/null || apt-get install -y -qq libaio1 2>/dev/null; ln -sf /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1 2>/dev/null||true`nIC='https://download.oracle.com/otn_software/linux/instantclient/2112000'`ncurl -fsSL `"`$IC/instantclient-basic-linux.x64-21.12.0.0.0dbru.zip`" -o /tmp/ic-basic.zip`ncurl -fsSL `"`$IC/instantclient-sqlplus-linux.x64-21.12.0.0.0dbru.zip`" -o /tmp/ic-sql.zip`nmkdir -p /usr/lib/oracle/21/client64/{bin,lib}`nunzip -q /tmp/ic-basic.zip -d /tmp/ic && mv /tmp/ic/instantclient_21_12/*.so* /usr/lib/oracle/21/client64/lib/`nunzip -q /tmp/ic-sql.zip -d /tmp/ic && mv /tmp/ic/instantclient_21_12/sqlplus /usr/lib/oracle/21/client64/bin/`nrm -rf /tmp/ic /tmp/ic-*.zip`necho /usr/lib/oracle/21/client64/lib > /etc/ld.so.conf.d/oracle21.conf && ldconfig`nln -sf /usr/lib/oracle/21/client64/bin/sqlplus /usr/local/bin/sqlplus`nprintf 'export ORACLE_HOME=/usr/lib/oracle/21/client64\nexport LD_LIBRARY_PATH=`$ORACLE_HOME/lib:`$LD_LIBRARY_PATH\nexport PATH=`$ORACLE_HOME/bin:`$PATH\nexport NLS_LANG=AMERICAN_AMERICA.AL32UTF8\n' >> /home/`$U/.$($shell)rc"
+
+        jq          = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y jq; else apt-get install -y -qq jq; fi' + "`n" +
+                      'YQ=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/mikefarah/yq/releases/download/$YQ/yq_linux_amd64" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq'
+
+        bat         = 'K=$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y bat 2>/dev/null || curl -fsSL "https://github.com/sharkdp/bat/releases/download/$K/bat-${K}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /tmp && mv /tmp/bat-*/bat /usr/local/bin/ 2>/dev/null||true; else curl -fsSL "https://github.com/sharkdp/bat/releases/download/$K/bat_${K#v}_amd64.deb" -o /tmp/bat.deb && dpkg -i /tmp/bat.deb && rm /tmp/bat.deb 2>/dev/null||true; fi'
+
+        eza         = 'K=$(curl -s https://api.github.com/repos/eza-community/eza/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'curl -fsSL "https://github.com/eza-community/eza/releases/download/$K/eza_x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin 2>/dev/null||true && chmod +x /usr/local/bin/eza 2>/dev/null||true'
+
+        ripgrep     = 'K=$(curl -s https://api.github.com/repos/BurntSushi/ripgrep/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y ripgrep 2>/dev/null || curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/$K/ripgrep-${K}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C /tmp && mv /tmp/ripgrep-*/rg /usr/local/bin/ 2>/dev/null||true; else curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/$K/ripgrep_${K}_amd64.deb" -o /tmp/rg.deb && dpkg -i /tmp/rg.deb && rm /tmp/rg.deb 2>/dev/null||true; fi' + "`n" +
+                      'K2=$(curl -s https://api.github.com/repos/sharkdp/fd/releases/latest | grep tag_name | cut -d''"'' -f4)' + "`n" +
+                      'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y fd-find 2>/dev/null || curl -fsSL "https://github.com/sharkdp/fd/releases/download/$K2/fd-${K2}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /tmp && mv /tmp/fd-*/fd /usr/local/bin/ 2>/dev/null||true; else curl -fsSL "https://github.com/sharkdp/fd/releases/download/$K2/fd_${K2#v}_amd64.deb" -o /tmp/fd.deb && dpkg -i /tmp/fd.deb && rm /tmp/fd.deb 2>/dev/null||true; fi'
+
+        tmux        = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y tmux; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux; fi'
+
+        htop        = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y htop btop 2>/dev/null || dnf install -y htop; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq htop btop 2>/dev/null || apt-get install -y -qq htop; fi'
+
+        zoxide      = 'curl -fsSL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh' + "`n" +
+                      ('printf ''eval "$(zoxide init ' + $shell + ')"\n'' >> /home/$U/.' + $shell + 'rc')
+
+        starship    = 'curl -fsSL https://starship.rs/install.sh | sh -s -- -y' + "`n" +
+                      ('printf ''eval "$(starship init ' + $shell + ')"\n'' >> /home/$U/.' + $shell + 'rc')
+
+        # ── Rede & Segurança ──────────────────────────────────────────────────
+        curl_jq     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y httpie 2>/dev/null||true; else apt-get install -y -qq httpie 2>/dev/null||true; fi'
+
+        nmap        = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y nmap; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nmap; fi'
+
+        openssl     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y openssl; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssl cfssl 2>/dev/null||apt-get install -y -qq openssl; fi'
+
+        sshpass     = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y sshpass; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sshpass; fi'
+
+        wireshark_cli = 'if [[ "$PKG_MGR" == "dnf" ]]; then dnf install -y wireshark-cli; else DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tshark; fi'
+
+        # ── VS Code alias ──────────────────────────────────────────────────────
         vscode      = ('printf "alias code=''/mnt/c/Users/$(cmd.exe /c \"echo %USERNAME%\" 2>/dev/null | tr -d \"\r\")/AppData/Local/Programs/Microsoft\\ VS\\ Code/bin/code''\n" >> /home/$U/.' + $shell + 'rc')
     }
 
@@ -448,15 +625,17 @@ function Build-ProvisionScript {
         & $a "alias kl='kubectl logs -f'"
         & $a "alias kex='kubectl exec -it'"
     }
-    if ($tools -contains 'helm')   { & $a "alias h='helm'"; & $a "alias hls='helm list -A'" }
-    if ($tools -contains 'docker') { & $a "alias d='docker'"; & $a "alias dps='docker ps --format \`"table {{.Names}}	{{.Status}}	{{.Ports}}\`"'" }
-    if ($tools -contains 'sqlplus'){ & $a "alias sqldev='sqlplus /nolog'" }
+    if ($tools -contains 'helm')    { & $a "alias h='helm'"; & $a "alias hls='helm list -A'" }
+    if ($tools -contains 'docker')  { & $a "alias d='docker'"; & $a "alias dps='docker ps --format \`\"table {{.Names}}\t{{.Status}}\t{{.Ports}}\`\"'" }
+    if ($tools -contains 'sqlplus') { & $a "alias sqldev='sqlplus /nolog'" }
+    if ($tools -contains 'eza')     { & $a "alias ls='eza --icons'"; & $a "alias ll='eza -lahF --icons --git'" }
+    if ($tools -contains 'bat')     { & $a "alias cat='bat --style=plain'" }
     & $a "ALIASES"
     & $a "chown `$U: /home/`$U/.$($shell)rc 2>/dev/null||true"
     & $a "ok 'Aliases'"; & $a ""
 
     & $a 'echo -e "\n\033[0;32m✓ Provisionamento concluido!\033[0m"'
-    & $a "echo -e \"  Acesse: wsl -d $($cfg.distro.wslName) -u `$U\""
+    & $a ("echo -e '  Acesse: wsl -d " + $cfg.distro.wslName + " -u $U'")
 
     return $L -join "`n"
 }
@@ -480,7 +659,6 @@ $winVer      = Get-WinVersion
 while ($true) {
     $now = [DateTime]::Now
 
-    # ── Heartbeat ────────────────────────────────────────────────────────────
     if (($now - $heartbeatTs).TotalSeconds -ge $HeartbeatSec) {
         try {
             $distros = @(Get-DistroList)
@@ -498,16 +676,13 @@ while ($true) {
         }
     }
 
-    # ── Poll commands ─────────────────────────────────────────────────────────
     if (($now - $pollTs).TotalSeconds -ge $PollSec) {
         try {
             $resp = Api-Get "/agent/commands"
             $pollTs = $now
-
             if ($resp.command) {
                 $cmd = $resp.command.command
                 Log "Command received: $($cmd.type) / $($resp.command.command_id)"
-
                 switch ($cmd.type) {
                     'provision'    { Run-Provision    $cmd }
                     'launch'       { Run-Launch       $cmd }
