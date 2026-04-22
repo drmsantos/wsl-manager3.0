@@ -237,8 +237,11 @@ function Run-Provision {
         }
         $curPct = 28
 
-        while (-not $proc2.StandardOutput.EndOfStream) {
-            $line = $proc2.StandardOutput.ReadLine()
+        $readTask = $proc2.StandardOutput.ReadToEndAsync()
+        $proc2.WaitForExit()
+        $allOutput = $readTask.GetAwaiter().GetResult()
+        foreach ($line in ($allOutput -split "`n")) {
+            $line = ($line -replace "\x1B\[[0-9;]*[mK]","" -replace "\x1B\[\??[0-9;]*[hlc]","" -replace "[^\x20-\x7E\x0A\x0D]","").Trim()
             if (-not $line) { continue }
             foreach ($kv in $pctMap.GetEnumerator()) {
                 if ($line -match $kv.Key) { $curPct = [Math]::Max($curPct, $kv.Value); break }
@@ -251,8 +254,6 @@ function Run-Provision {
             $clean = $line -replace '\x1b\[[0-9;]*m',''
             Post-Result $cmdId $lvl $clean $curPct
         }
-
-        $proc2.WaitForExit()
 
         if ($proc2.ExitCode -ne 0) {
             $stderr = $proc2.StandardError.ReadToEnd() -replace '\x1b\[[0-9;]*m',''
